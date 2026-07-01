@@ -13,8 +13,10 @@ function setup() {
   fs.mkdirSync(appDataDir, { recursive: true });
   const cfg = path.join(appDataDir, 'config.json');
   fs.writeFileSync(cfg, JSON.stringify({ locale: 'en-US', 'oauth:tokenCache': 'TOKEN-A-V1', 'oauth:tokenCacheV2': 'TOKEN-A-V2', keep: 'me' }));
+  const cookies = path.join(appDataDir, 'Cookies');
+  fs.writeFileSync(cookies, 'COOKIES-A'); // stands in for the SQLite session DB
   const ctx = { home: home, platform: 'darwin', appDataDir: appDataDir, configDir: path.join(home, '.config', 'ccswitch'), now: function () { return '2026-01-01T00:00:00.000Z'; } };
-  return { ctx: ctx, cfg: cfg };
+  return { ctx: ctx, cfg: cfg, cookies: cookies };
 }
 
 test('snapshotToProfile captures the desktop app login tokens', function () {
@@ -58,6 +60,41 @@ test('snapshotToProfile is not-ok when config.json has no token', function () {
   const s = setup();
   fs.writeFileSync(s.cfg, JSON.stringify({ locale: 'en-US' }));
   assert.strictEqual(appauth.snapshotToProfile(s.ctx, 'A').ok, false);
+});
+
+test('snapshot captures the Cookies DB and apply restores it (the real login)', function () {
+  const s = setup();
+  appauth.snapshotToProfile(s.ctx, 'A'); // captures COOKIES-A
+  assert.ok(fs.existsSync(appauth.profileCookiesPath(s.ctx, 'A')));
+  // app later logged in as B
+  fs.writeFileSync(s.cookies, 'COOKIES-B');
+  fs.writeFileSync(path.join(path.dirname(s.cookies), 'Cookies-journal'), 'B-journal');
+  const r = appauth.applyFromProfile(s.ctx, 'A');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(fs.readFileSync(s.cookies, 'utf8'), 'COOKIES-A'); // session restored
+  assert.strictEqual(fs.existsSync(path.join(path.dirname(s.cookies), 'Cookies-journal')), false); // stale journal removed
+});
+
+test('signOutApp deletes the Cookies DB and strips tokens (with backups)', function () {
+  const s = setup();
+  const r = appauth.signOutApp(s.ctx);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(fs.existsSync(s.cookies), false); // real login removed
+  const cfg = JSON.parse(fs.readFileSync(s.cfg, 'utf8'));
+  assert.strictEqual('oauth:tokenCacheV2' in cfg, false);
+  assert.strictEqual(cfg.keep, 'me');
+  const bdir = path.join(s.ctx.configDir, 'backups');
+  const names = fs.readdirSync(bdir);
+  assert.ok(names.some(function (n) { return n.indexOf('config-') === 0; }), 'config backed up');
+  assert.ok(names.some(function (n) { return n.indexOf('cookies-') === 0; }), 'cookies backed up');
+});
+
+test('signOutApp still signs out when only cookies exist (no tokens in config)', function () {
+  const s = setup();
+  fs.writeFileSync(s.cfg, JSON.stringify({ locale: 'en-US' })); // tokens already gone
+  const r = appauth.signOutApp(s.ctx);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(fs.existsSync(s.cookies), false);
 });
 
 test('app-login snapshots live in app/ and do NOT pollute profiles.list()', function () {

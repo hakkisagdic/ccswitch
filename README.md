@@ -116,11 +116,12 @@ its Recents shows them all. It backs up the store first and only ever *adds* fil
 
 ### Switching the desktop app's login too (macOS, experimental)
 
-The Claude **desktop app** has its own login, separate from the CLI: encrypted
-`oauth:tokenCache` blobs in `~/Library/Application Support/Claude/config.json`
-(the account is inside the token). So `ccswitch switch` can flip **both** the CLI
-*and* the desktop app to the same account — but it first needs each account's
-desktop login captured.
+The Claude **desktop app** has its own login, separate from the CLI. Its *actual*
+session is the claude.ai cookie in its `Cookies` DB (the `oauth:tokenCache` blobs
+in `config.json` are just a cache the app re-derives from that cookie on launch).
+ccswitch therefore captures and swaps **both** — so `ccswitch switch` can flip the
+CLI *and* the desktop app to the same account, once each account's desktop login
+has been captured.
 
 The desktop app's login is **independent** from the CLI's — they can even be on
 different accounts at the same time — so capture each separately:
