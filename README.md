@@ -113,6 +113,29 @@ its Recents shows them all. It backs up the store first and only ever *adds* fil
 > makes the app's list surface them. **Cloud "Chat" conversations (claude.ai) are
 > not touched** — they live server-side per account and can't be merged locally.
 
+### Switching the desktop app's login too (macOS, experimental)
+
+The Claude **desktop app** has its own login, separate from the CLI: encrypted
+`oauth:tokenCache` blobs in `~/Library/Application Support/Claude/config.json`
+(the account is inside the token). So `ccswitch switch` can flip **both** the CLI
+*and* the desktop app to the same account — but it first needs each account's
+desktop login captured.
+
+**Bootstrap (once per account):**
+1. In the desktop app, sign in to the account (Claude menu → your account). This
+   logs both the app and Claude Code into it — check with `ccswitch current`.
+2. Run `ccswitch add`. Alongside the CLI creds it captures that account's desktop
+   login (you'll see “also captured this account's desktop-app login”).
+3. Repeat for your other account(s).
+
+After that, `ccswitch switch <name>` (with the app closed → reopened) swaps the CLI
+creds **and** the desktop-app token, so both come up on the chosen account — no
+manual re-login. `config.json` is backed up first (`~/.config/ccswitch/backups/`).
+
+> Experimental: it rewrites the app's `config.json` login while the app is closed.
+> If a saved token has fully expired the app may ask you to log in again; just
+> re-`add` that account. Restore a backup if anything looks off.
+
 > Switching should happen while Claude is closed, or Claude may overwrite the change on exit.
 > - **Interactive** (menu, or `switch` in a terminal): if Claude is open you're **asked before it's closed** — answer *no* to cancel.
 > - `--restart`: close & reopen Claude without asking (macOS).

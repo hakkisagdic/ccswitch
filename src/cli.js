@@ -5,6 +5,7 @@ const core = require('./core');
 const profiles = require('./profiles');
 const appctl = require('./platform');
 const appsessions = require('./appsessions');
+const appauth = require('./appauth');
 
 let VERSION = '0.0.0';
 try { VERSION = require('../package.json').version; } catch (e) { /* ignore */ }
@@ -68,6 +69,7 @@ async function cmdSwitch(ctx, rest) {
     }
     print('Quitting Claude...'); appctl.quitClaude(ctx.platform); await waitForQuit(ctx);
     core.doSwitch(ctx, name);
+    switchDesktopLogin(ctx, name);
     consolidateAndReport(ctx);
     print('Reopening Claude...'); appctl.openClaude(ctx.platform);
     print('✅ Switched to: ' + (em || name));
@@ -84,8 +86,17 @@ async function cmdSwitch(ctx, rest) {
   }
   // Not running: just swap.
   core.doSwitch(ctx, name);
+  switchDesktopLogin(ctx, name);
   consolidateAndReport(ctx);
   print('✅ Switched to: ' + (em || name) + (manage ? '' : '. Restart Claude Code to apply.'));
+}
+
+function switchDesktopLogin(ctx, name) {
+  // Only touch config.json while the app is closed.
+  if (appctl.isClaudeRunning(ctx.platform)) return { ok: false };
+  const a = appauth.applyFromProfile(ctx, name);
+  if (a.ok) print('  ↳ switched the Claude desktop-app login too.');
+  return a;
 }
 
 function consolidateAndReport(ctx) {
@@ -172,6 +183,8 @@ async function main(argv) {
         const r = core.addCurrent(ctx, rest[0]);
         print(r.refreshed ? "↻ '" + r.email + "' already saved as '" + r.name + "' — refreshed."
                           : "💾 saved '" + r.email + "' as '" + r.name + "'.");
+        const a = appauth.snapshotToProfile(ctx, r.name);
+        if (a.ok) print("  ↳ also captured this account's Claude desktop-app login.");
         return;
       }
       case 'save':

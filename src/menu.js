@@ -7,6 +7,7 @@ const core = require('./core');
 const profiles = require('./profiles');
 const appctl = require('./platform');
 const appsessions = require('./appsessions');
+const appauth = require('./appauth');
 
 function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
@@ -14,6 +15,12 @@ function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 function consolidateSilent(ctx) {
   if (appctl.isClaudeRunning(ctx.platform)) return { ok: false, merged: 0 };
   return appsessions.consolidate(ctx);
+}
+
+// Swap the desktop app's own login (config.json), only while it's closed.
+function switchDesktopSilent(ctx, name) {
+  if (appctl.isClaudeRunning(ctx.platform)) return { ok: false };
+  return appauth.applyFromProfile(ctx, name);
 }
 
 // Default the highlight to the first NON-active account (the one you'd switch to).
@@ -53,8 +60,10 @@ async function switchInteractive(ctx, name, p, rl) {
     for (let i = 0; i < 40 && appctl.isClaudeRunning(ctx.platform); i++) { await delay(500); }
   }
   core.doSwitch(ctx, name);
+  const appl = switchDesktopSilent(ctx, name);
+  if (appl.ok) p('  ↳ switched the Claude desktop-app login too.');
   const cons = consolidateSilent(ctx);
-  if (cons.ok && cons.merged) p('  ↳ pulled ' + cons.merged + ' session(s) from your other account(s) into this one.');
+  if (cons.ok && cons.merged) p('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.');
   if (running) { p('  Reopening Claude...'); appctl.openClaude(ctx.platform); }
   const em = profiles.email(ctx.configDir, name);
   p('  ✅ Switched to: ' + (em || name));
@@ -75,6 +84,8 @@ async function menuAdd(ctx, rl, p) {
   const r = core.addCurrent(ctx, ans === '' ? undefined : ans);
   p(r.refreshed ? "  ↻ '" + r.email + "' already saved as '" + r.name + "' — refreshed."
                 : "  💾 saved '" + r.email + "' as '" + r.name + "'.");
+  const a = appauth.snapshotToProfile(ctx, r.name);
+  if (a.ok) p("  ↳ also captured this account's Claude desktop-app login.");
 }
 
 async function menuRemove(ctx, rl, p) {
@@ -212,8 +223,10 @@ function runMenuKeys(ctx, io) {
         for (let i = 0; i < 40 && appctl.isClaudeRunning(ctx.platform); i++) { await delay(500); }
       }
       core.doSwitch(ctx, name);
+      const appl = switchDesktopSilent(ctx, name);
+      if (appl.ok) write('  ↳ switched the Claude desktop-app login too.\n');
       const cons = consolidateSilent(ctx);
-      if (cons.ok && cons.merged) write('  ↳ pulled ' + cons.merged + ' session(s) from your other account(s) into this one.\n');
+      if (cons.ok && cons.merged) write('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.\n');
       if (running) { write('  Reopening Claude...\n'); appctl.openClaude(ctx.platform); }
       const em = profiles.email(ctx.configDir, name);
       write('  ✅ Switched to: ' + (em || name) + '\n');
