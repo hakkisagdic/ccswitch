@@ -13,7 +13,7 @@ class KeychainStore {
   }
 
   _read(service) {
-    const r = run('security', ['find-generic-password', '-s', service, '-a', this.account, '-w']);
+    const r = run('/usr/bin/security', ['find-generic-password', '-s', service, '-a', this.account, '-w']);
     if (r.code !== 0) return null;
     return r.stdout.replace(/\r?\n$/, '');
   }
@@ -23,14 +23,14 @@ class KeychainStore {
     // as an argv value and is briefly visible in the process table (`ps`) for the
     // duration of this call. Acceptable for a single-user macOS machine; documented
     // in the README's security notes. (The read path does not expose the secret.)
-    const r = run('security', ['add-generic-password', '-U', '-s', service, '-a', this.account, '-w', blob]);
+    const r = run('/usr/bin/security', ['add-generic-password', '-U', '-s', service, '-a', this.account, '-w', blob]);
     if (r.code !== 0) {
       throw new Error('Keychain write failed for "' + service + '": ' + (r.stderr || r.code));
     }
   }
 
   _delete(service) {
-    run('security', ['delete-generic-password', '-s', service, '-a', this.account]);
+    run('/usr/bin/security', ['delete-generic-password', '-s', service, '-a', this.account]);
   }
 
   getLive() { return this._read(SERVICE_LIVE); }

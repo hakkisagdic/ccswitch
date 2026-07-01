@@ -9,12 +9,37 @@ const profiles = require('./profiles');
 const appctl = require('./platform');
 const appsessions = require('./appsessions');
 const appauth = require('./appauth');
+const lock = require('./lock');
+const logmod = require('./log');
+const style = require('./style').make(process.stdout);
+
+// Serialize every mutation across processes (double-fired alias, launcher app
+// racing a terminal, two menus) so a switch can never interleave with another.
+async function withLock(ctx, fn) {
+  const l = await lock.acquire(ctx.configDir);
+  try { return await fn(); } finally { l.release(); }
+}
 
 let VERSION = '0.0.0';
 try { VERSION = require('../package.json').version; } catch (e) { /* ignore */ }
 
-function print(s) { process.stdout.write((s == null ? '' : s) + '\n'); }
-function fail(msg) { process.stderr.write('❌ ' + msg + '\n'); process.exitCode = 1; }
+// --json mode: stdout carries exactly one JSON object; human text goes to stderr.
+let JSON_MODE = false;
+const JSON_SCHEMA_VERSION = 1;
+
+function print(s) {
+  (JSON_MODE ? process.stderr : process.stdout).write((s == null ? '' : s) + '\n');
+}
+function jsonOut(obj) {
+  if (!JSON_MODE) return;
+  process.stdout.write(JSON.stringify(Object.assign({ schemaVersion: JSON_SCHEMA_VERSION }, obj)) + '\n');
+}
+function fail(msg) {
+  logmod.log('error: ' + msg);
+  if (JSON_MODE) jsonOut({ error: { message: String(msg) } });
+  process.stderr.write(style.err('❌ ') + msg + '\n');
+  process.exitCode = 1;
+}
 
 function usage() {
   print('ccswitch ' + VERSION + ' — switch between Anthropic / Claude Code accounts (macOS, Linux, Windows)');
@@ -25,11 +50,14 @@ function usage() {
   print('                                 (--app: desktop app only; name it if undetected)');
   print('  ccswitch <name|number>         switch to that account (asks before closing Claude;');
   print('                                 --restart = no prompt, --force = swap without closing)');
+  print('  ccswitch next                  rotate to the next saved account');
+  print('  ccswitch status                which account each surface is on (CLI + desktop app)');
   print('  ccswitch list                  saved accounts (* active, [cli|app] = what\'s captured)');
   print('  ccswitch remove <name|number>  delete a saved account');
   print('  ccswitch clean [--logout]      reset ccswitch data; --logout also signs out of');
   print('                                 Claude Code + the desktop app (asks to confirm)');
   print('');
+  print('Global flags: --json (machine-readable stdout)   --debug (verbose log to stderr + file)');
   print('Tokens stay in the OS credential store; ~/.claude/projects history is account-independent.');
 }
 
@@ -48,16 +76,32 @@ async function cmdSwitch(ctx, rest) {
   const name = core.resolveProfile(ctx, arg);
   if (!name) return fail("no such profile: '" + arg + "' (see: ccswitch list)");
   const em = profiles.email(ctx.configDir, name);
-  if (em && em === core.currentEmail(ctx)) { print("'" + em + "' is already active."); return; }
+  if (em && em === core.currentEmail(ctx)) {
+    print("'" + em + "' is already active.");
+    jsonOut({ alreadyActive: { name: name, email: em } });
+    return;
+  }
+  logmod.log('switch requested -> ' + name);
 
   const running = appctl.isClaudeRunning(ctx.platform);
   const manage = appctl.canManageApp(ctx.platform);
+
+  function emitSwitched(did, appl, cons) {
+    logmod.log('switched -> ' + name + ' (cli=' + !!(did && did.cli) + ', app=' + !!(appl && appl.ok) + ')');
+    jsonOut({
+      switched: { name: name, email: em || null },
+      cliSwitched: !!(did && did.cli),
+      appSwitched: !!(appl && appl.ok),
+      sessionsShared: (cons && cons.merged) || 0,
+    });
+  }
 
   // --force: swap in place without closing the app.
   if (running && force) {
     const did = core.performSwitch(ctx, name);
     if (!did.cli) print("  ↳ CLI login for this profile isn't captured — nothing to swap for the CLI.");
-    print('✅ Switched to: ' + (em || name) + '. Restart Claude to apply.');
+    print(style.ok('✅') + ' Switched to: ' + (em || name) + '. Restart Claude to apply.');
+    emitSwitched(did, null, null);
     return;
   }
   // App is open and we can close it: confirm, then close -> switch -> reopen.
@@ -73,17 +117,19 @@ async function cmdSwitch(ctx, rest) {
     print('Quitting Claude...'); appctl.quitClaude(ctx.platform); await waitForQuit(ctx);
     const did = core.performSwitch(ctx, name);
     if (!did.cli) print("  ↳ CLI login for this profile isn't captured — switched the desktop app only.");
-    switchDesktopLogin(ctx, name);
-    consolidateAndReport(ctx);
+    const appl = switchDesktopLogin(ctx, name);
+    const cons = consolidateAndReport(ctx);
     print('Reopening Claude...'); appctl.openClaude(ctx.platform);
-    print('✅ Switched to: ' + (em || name));
+    print(style.ok('✅') + ' Switched to: ' + (em || name));
+    emitSwitched(did, appl, cons);
     return;
   }
   // App is open but we cannot auto-close it (Linux/Windows).
   if (running && !manage) {
     if (autoYes) {
-      core.performSwitch(ctx, name);
-      print('✅ Switched to: ' + (em || name) + '. Restart Claude Code to apply.');
+      const did = core.performSwitch(ctx, name);
+      print(style.ok('✅') + ' Switched to: ' + (em || name) + '. Restart Claude Code to apply.');
+      emitSwitched(did, null, null);
       return;
     }
     return fail('Claude / Claude Code is open — close it first (it cannot be auto-closed on this OS), or re-run with --force.');
@@ -91,9 +137,37 @@ async function cmdSwitch(ctx, rest) {
   // Not running: just swap.
   const did = core.performSwitch(ctx, name);
   if (!did.cli) print("  ↳ CLI login for this profile isn't captured — switched the desktop app only.");
-  switchDesktopLogin(ctx, name);
-  consolidateAndReport(ctx);
-  print('✅ Switched to: ' + (em || name) + (manage ? '' : '. Restart Claude Code to apply.'));
+  const appl = switchDesktopLogin(ctx, name);
+  const cons = consolidateAndReport(ctx);
+  print(style.ok('✅') + ' Switched to: ' + (em || name) + (manage ? '' : '. Restart Claude Code to apply.'));
+  emitSwitched(did, appl, cons);
+}
+
+// Rotate to the next saved account after the currently active one (wraps around).
+async function cmdNext(ctx, rest) {
+  const list = core.listProfiles(ctx);
+  if (list.length < 2) return fail('need at least 2 saved accounts to rotate (see: ccswitch add)');
+  let idx = -1;
+  list.forEach(function (e, i) { if (e.active) idx = i; });
+  const target = list[(idx + 1) % list.length];
+  if (target.active) return fail('no other account to rotate to');
+  print('Rotating to: ' + (target.email || target.name));
+  return cmdSwitch(ctx, [target.name].concat(rest.filter(function (a) { return a.indexOf('--') === 0; })));
+}
+
+// One-line answer to "which account am I on?" (both surfaces).
+function cmdStatus(ctx) {
+  const cliEmail = core.currentEmail(ctx) || null;
+  const appName = ctx.appDataDir ? appauth.activeProfileName(ctx) : null;
+  const appEmail = appName ? (profiles.email(ctx.configDir, appName) || null) : null;
+  jsonOut({
+    cli: cliEmail ? { email: cliEmail } : null,
+    app: appName ? { name: appName, email: appEmail } : null,
+  });
+  if (!JSON_MODE) {
+    print('Claude Code: ' + (cliEmail || 'not logged in') +
+      (ctx.appDataDir ? '   ·   Desktop app: ' + (appEmail || appName || 'unknown') : ''));
+  }
 }
 
 function switchDesktopLogin(ctx, name) {
@@ -171,6 +245,7 @@ function warnIncompleteCookies(name) {
 // `--app` limits it to the desktop app (use with a name when auto-detect can't
 // identify which account the app is signed into).
 async function cmdAdd(ctx, rest) {
+  logmod.log("add invoked");
   const appOnly = rest.indexOf('--app') !== -1;
   const nameArg = rest.filter(function (a) { return a.indexOf('--') !== 0; })[0];
 
@@ -235,6 +310,7 @@ async function waitForQuit(ctx, timeoutMs) {
 }
 
 async function cmdClean(ctx, rest) {
+  logmod.log("clean invoked");
   const force = rest.indexOf('--force') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
   const logout = rest.indexOf('--logout') !== -1 || rest.indexOf('--signout') !== -1 || rest.indexOf('--all') !== -1;
   const names = profiles.list(ctx.configDir);
@@ -301,6 +377,22 @@ async function cmdClean(ctx, rest) {
 function cmdList(ctx) {
   const list = core.listProfiles(ctx);
   const appActive = ctx.appDataDir ? appauth.activeProfileName(ctx) : null;
+  if (JSON_MODE) {
+    jsonOut({
+      accounts: list.map(function (e) {
+        return {
+          index: e.index, name: e.name, email: e.email || null,
+          cliCaptured: !!ctx.store.getProfile(e.name),
+          appCaptured: appauth.hasProfile(ctx, e.name),
+          activeCli: !!e.active,
+          activeApp: e.name === appActive,
+        };
+      }),
+      activeCli: core.currentEmail(ctx) || null,
+      activeApp: appActive ? (profiles.email(ctx.configDir, appActive) || appActive) : null,
+    });
+    return;
+  }
   print('Saved accounts (' + ctx.configDir + '):');
   if (!list.length) { print("  (none yet — log in in Claude, then run 'ccswitch add')"); }
   else {
@@ -321,9 +413,15 @@ function cmdList(ctx) {
 }
 
 async function main(argv) {
+  // Global flags, valid anywhere on the line.
+  JSON_MODE = argv.indexOf('--json') !== -1;
+  const debug = argv.indexOf('--debug') !== -1;
+  argv = argv.filter(function (a) { return a !== '--json' && a !== '--debug'; });
+
   const cmd = argv[0];
   const rest = argv.slice(1);
   const ctx = createContext();
+  logmod.init(ctx.configDir, debug);
   try {
     switch (cmd) {
       case undefined:
@@ -332,18 +430,22 @@ async function main(argv) {
       case 'menu': // hidden: used by the launcher app; same as bare `ccswitch`
         return require('./menu').runMenu(ctx);
       case 'add':
-        return cmdAdd(ctx, rest);
+        return withLock(ctx, function () { return cmdAdd(ctx, rest); });
       case 'list':
         return cmdList(ctx);
-      case 'remove': {
-        const n = core.resolveProfile(ctx, rest[0]);
-        if (!n) return fail("no such account: '" + (rest[0] || '') + "'");
-        core.removeProfile(ctx, n);
-        print('🗑  removed: ' + n);
-        return;
-      }
+      case 'status':
+        return cmdStatus(ctx);
+      case 'next':
+        return withLock(ctx, function () { return cmdNext(ctx, rest); });
+      case 'remove':
+        return withLock(ctx, function () {
+          const n = core.resolveProfile(ctx, rest[0]);
+          if (!n) return fail("no such account: '" + (rest[0] || '') + "'");
+          core.removeProfile(ctx, n);
+          print('🗑  removed: ' + n);
+        });
       case 'clean':
-        return cmdClean(ctx, rest);
+        return withLock(ctx, function () { return cmdClean(ctx, rest); });
       case 'version':
       case '--version':
       case '-v':
@@ -356,7 +458,7 @@ async function main(argv) {
         return;
       default: {
         // `ccswitch <name|number>` switches directly.
-        if (core.resolveProfile(ctx, cmd)) return cmdSwitch(ctx, [cmd].concat(rest));
+        if (core.resolveProfile(ctx, cmd)) return withLock(ctx, function () { return cmdSwitch(ctx, [cmd].concat(rest)); });
         process.stderr.write("ccswitch: unknown command or account '" + cmd + "'\n\n");
         usage();
         process.exitCode = 1;

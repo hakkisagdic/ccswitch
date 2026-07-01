@@ -8,8 +8,17 @@ const profiles = require('./profiles');
 const appctl = require('./platform');
 const appsessions = require('./appsessions');
 const appauth = require('./appauth');
+const lock = require('./lock');
 
 function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+// Serialize menu mutations with any other ccswitch process.
+async function withLock(ctx, onErr, fn) {
+  let l;
+  try { l = await lock.acquire(ctx.configDir, { timeoutMs: 5000 }); }
+  catch (e) { onErr('  ❌ ' + e.message); return null; }
+  try { return await fn(); } finally { l.release(); }
+}
 
 // Only merge into the app store while the app is actually closed.
 function consolidateSilent(ctx) {
@@ -59,13 +68,17 @@ async function switchInteractive(ctx, name, p, rl) {
     appctl.quitClaude(ctx.platform);
     for (let i = 0; i < 40 && appctl.isClaudeRunning(ctx.platform); i++) { await delay(500); }
   }
-  const did = core.performSwitch(ctx, name);
-  if (!did.cli) p("  ↳ CLI login for this profile isn't captured — switching the desktop app only.");
-  const appl = switchDesktopSilent(ctx, name);
-  if (appl.ok) p('  ↳ switched the Claude desktop-app login too.');
-  else if (appl.reason && appl.reason !== 'no saved desktop login for this profile') p('  ⚠️ desktop app NOT switched: ' + appl.reason);
-  const cons = consolidateSilent(ctx);
-  if (cons.ok && cons.merged) p('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.');
+  const done = await withLock(ctx, p, async function () {
+    const did = core.performSwitch(ctx, name);
+    if (!did.cli) p("  ↳ CLI login for this profile isn't captured — switching the desktop app only.");
+    const appl = switchDesktopSilent(ctx, name);
+    if (appl.ok) p('  ↳ switched the Claude desktop-app login too.');
+    else if (appl.reason && appl.reason !== 'no saved desktop login for this profile') p('  ⚠️ desktop app NOT switched: ' + appl.reason);
+    const cons = consolidateSilent(ctx);
+    if (cons.ok && cons.merged) p('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.');
+    return true;
+  });
+  if (done === null) { if (running) { p('  Reopening Claude...'); appctl.openClaude(ctx.platform); } return false; }
   if (running) { p('  Reopening Claude...'); appctl.openClaude(ctx.platform); }
   const em = profiles.email(ctx.configDir, name);
   p('  ✅ Switched to: ' + (em || name));
@@ -83,9 +96,11 @@ async function menuAdd(ctx, rl, p) {
   if (raw === null) { p('  Cancelled.'); return; }
   const ans = raw.trim();
   if (ans === 'c' || ans === 'C') { p('  Cancelled.'); return; }
-  const r = core.addCurrent(ctx, ans === '' ? undefined : ans);
-  p(r.refreshed ? "  ↻ '" + r.email + "' already saved as '" + r.name + "' — refreshed."
-                : "  💾 saved '" + r.email + "' as '" + r.name + "'.");
+  await withLock(ctx, p, async function () {
+    const r = core.addCurrent(ctx, ans === '' ? undefined : ans);
+    p(r.refreshed ? "  ↻ '" + r.email + "' already saved as '" + r.name + "' — refreshed."
+                  : "  💾 saved '" + r.email + "' as '" + r.name + "'.");
+  });
 }
 
 async function menuRemove(ctx, rl, p) {
@@ -98,8 +113,10 @@ async function menuRemove(ctx, rl, p) {
   if (ans === '') { p('  Cancelled.'); return; }
   const name = core.resolveProfile(ctx, ans);
   if (!name) { p('  Invalid selection.'); return; }
-  core.removeProfile(ctx, name);
-  p('  🗑 removed: ' + name);
+  await withLock(ctx, p, async function () {
+    core.removeProfile(ctx, name);
+    p('  🗑 removed: ' + name);
+  });
 }
 
 async function runMenuLine(ctx, io) {
@@ -230,14 +247,18 @@ function runMenuKeys(ctx, io) {
         appctl.quitClaude(ctx.platform);
         for (let i = 0; i < 40 && appctl.isClaudeRunning(ctx.platform); i++) { await delay(500); }
       }
-      const did = core.performSwitch(ctx, name);
-      if (!did.cli) write("  ↳ CLI login for this profile isn't captured — switching the desktop app only.\n");
-      const appl = switchDesktopSilent(ctx, name);
-      if (appl.ok) write('  ↳ switched the Claude desktop-app login too.\n');
-      else if (appl.reason && appl.reason !== 'no saved desktop login for this profile') write('  ⚠️ desktop app NOT switched: ' + appl.reason + '\n');
-      const cons = consolidateSilent(ctx);
-      if (cons.ok && cons.merged) write('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.\n');
+      const done = await withLock(ctx, function (m) { write(m + '\n'); }, async function () {
+        const did = core.performSwitch(ctx, name);
+        if (!did.cli) write("  ↳ CLI login for this profile isn't captured — switching the desktop app only.\n");
+        const appl = switchDesktopSilent(ctx, name);
+        if (appl.ok) write('  ↳ switched the Claude desktop-app login too.\n');
+        else if (appl.reason && appl.reason !== 'no saved desktop login for this profile') write('  ⚠️ desktop app NOT switched: ' + appl.reason + '\n');
+        const cons = consolidateSilent(ctx);
+        if (cons.ok && cons.merged) write('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.\n');
+        return true;
+      });
       if (running) { write('  Reopening Claude...\n'); appctl.openClaude(ctx.platform); }
+      if (done === null) return false;
       const em = profiles.email(ctx.configDir, name);
       write('  ✅ Switched to: ' + (em || name) + '\n');
       if (!managed) write('  ↪ Restart Claude Code to apply.\n');

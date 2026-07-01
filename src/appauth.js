@@ -71,7 +71,7 @@ function decryptBlob(b64, password) {
 }
 function getSafeStoragePassword(ctx) {
   if (ctx && ctx.safeStoragePassword) return ctx.safeStoragePassword;
-  const r = run('security', ['find-generic-password', '-s', 'Claude Safe Storage', '-a', 'Claude Key', '-w']);
+  const r = run('/usr/bin/security', ['find-generic-password', '-s', 'Claude Safe Storage', '-a', 'Claude Key', '-w']);
   return r.code === 0 ? r.stdout.replace(/\r?\n$/, '') : null;
 }
 
