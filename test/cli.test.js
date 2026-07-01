@@ -52,10 +52,10 @@ test('switch changes the active account (via CLI, --force)', function () {
   run(home, ['add']);                                  // save alice
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
   run(home, ['add']);                                  // save bob
-  const sw = run(home, ['switch', 'alice', '--force']); // --force: Claude may be running on dev machines
+  const sw = run(home, ['alice', '--force']); // --force: Claude may be running on dev machines
   assert.strictEqual(sw.status, 0, sw.stderr);
-  const cur = run(home, ['current']);
-  assert.match(cur.stdout, /alice@example\.com/);
+  const cur = run(home, ['list']);
+  assert.match(cur.stdout, /Active CLI account: alice@example\.com/);
 });
 
 test('capture-app captures the desktop login for a named profile (macOS)', function (t) {
@@ -65,7 +65,7 @@ test('capture-app captures the desktop login for a named profile (macOS)', funct
   const appCfgDir = path.join(home, 'Library', 'Application Support', 'Claude');
   fs.mkdirSync(appCfgDir, { recursive: true });
   fs.writeFileSync(path.join(appCfgDir, 'config.json'), JSON.stringify({ 'oauth:tokenCacheV2': 'APP-TOKEN' }));
-  const r = run(home, ['capture-app', 'alice']);
+  const r = run(home, ['add', 'alice', '--app']);
   assert.strictEqual(r.status, 0, r.stderr);
   assert.ok(fs.existsSync(path.join(home, '.config', 'ccswitch', 'app', 'alice.json')), 'app token saved');
 });
@@ -81,12 +81,12 @@ test('capture-app works with NO CLI login — creates an app-only account (macOS
   fs.writeFileSync(path.join(appCfgDir, 'config.json'), JSON.stringify({ 'oauth:tokenCacheV2': 'YAHOO-APP-TOKEN' }));
   fs.writeFileSync(path.join(appCfgDir, 'Cookies'), 'YAHOO-COOKIES');
 
-  const r = run(home, ['capture-app', 'yahoo']); // named (no auto-detect data in this fake env)
+  const r = run(home, ['add', 'yahoo', '--app']); // named (no auto-detect data in this fake env)
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(run(home, ['list']).stdout, /yahoo.*\[cli — \| app ✓\]/);
 
   // switching to an app-only profile must not fail on missing CLI creds
-  const sw = run(home, ['switch', 'yahoo', '--force']);
+  const sw = run(home, ['yahoo', '--force']);
   assert.strictEqual(sw.status, 0, sw.stderr);
   assert.match(sw.stdout, /desktop app only|nothing to swap for the CLI/);
 });
@@ -98,9 +98,9 @@ test('capture-app without a name and no detectable identity gives a helpful erro
   const appCfgDir = path.join(home, 'Library', 'Application Support', 'Claude');
   fs.mkdirSync(appCfgDir, { recursive: true });
   fs.writeFileSync(path.join(appCfgDir, 'config.json'), JSON.stringify({ 'oauth:tokenCacheV2': 'TOK' }));
-  const r = run(home, ['capture-app']);
+  const r = run(home, ['add', '--app']);
   assert.notStrictEqual(r.status, 0);
-  assert.match(r.stderr, /capture-app <name>/);
+  assert.match(r.stderr, /add <name> --app/);
 });
 
 test('clean --force deletes all saved ccswitch data', function () {
@@ -165,7 +165,7 @@ test('ccswitch <name> switches directly (no "switch" keyword)', function () {
   run(home, ['add']);
   const r = run(home, ['alice', '--force']);
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.match(run(home, ['current']).stdout, /alice@example\.com/);
+  assert.match(run(home, ['list']).stdout, /Active CLI account: alice@example\.com/);
 });
 
 test('unified add captures the desktop login too when only the app is signed in (macOS)', function (t) {
@@ -194,9 +194,9 @@ test('switch refuses to auto-close a running Claude without confirmation (non-in
   run(home, ['add']);                                   // save alice (current)
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
   run(home, ['add']);                                   // save bob (current = bob)
-  const r = run(home, ['switch', 'alice'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const r = run(home, ['alice'], { CCSWITCH_TEST_CLAUDE: 'running' });
   assert.notStrictEqual(r.status, 0);                   // must not silently close/switch
-  const cur = run(home, ['current'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const cur = run(home, ['list'], { CCSWITCH_TEST_CLAUDE: 'running' });
   assert.match(cur.stdout, /bob@example\.com/);         // still on bob — nothing changed
 });
 
@@ -205,9 +205,9 @@ test('switch --restart proceeds while Claude is running (closes/reopens, or swap
   run(home, ['add']);
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
   run(home, ['add']);
-  const r = run(home, ['switch', 'alice', '--restart'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const r = run(home, ['alice', '--restart'], { CCSWITCH_TEST_CLAUDE: 'running' });
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.match(run(home, ['current']).stdout, /alice@example\.com/);
+  assert.match(run(home, ['list']).stdout, /Active CLI account: alice@example\.com/);
 });
 
 test('switch --force swaps in place without closing a running Claude', function () {
@@ -215,9 +215,9 @@ test('switch --force swaps in place without closing a running Claude', function 
   run(home, ['add']);
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
   run(home, ['add']);
-  const r = run(home, ['switch', 'alice', '--force'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const r = run(home, ['alice', '--force'], { CCSWITCH_TEST_CLAUDE: 'running' });
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.match(run(home, ['current']).stdout, /alice@example\.com/);
+  assert.match(run(home, ['list']).stdout, /Active CLI account: alice@example\.com/);
 });
 
 test('menu survives EOF during a sub-prompt (no crash)', function () {

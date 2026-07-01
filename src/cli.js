@@ -20,8 +20,9 @@ function usage() {
   print('ccswitch ' + VERSION + ' — switch between Anthropic / Claude Code accounts (macOS, Linux, Windows)');
   print('');
   print('  ccswitch                       interactive menu (↑/↓ + Enter)');
-  print('  ccswitch add [name]            save the account(s) you are logged into — Claude Code');
+  print('  ccswitch add [name] [--app]    save the account(s) you are logged into — Claude Code');
   print('                                 AND the desktop app, auto-detected. Once per account.');
+  print('                                 (--app: desktop app only; name it if undetected)');
   print('  ccswitch <name|number>         switch to that account (asks before closing Claude;');
   print('                                 --restart = no prompt, --force = swap without closing)');
   print('  ccswitch list                  saved accounts (* active, [cli|app] = what\'s captured)');
@@ -29,7 +30,6 @@ function usage() {
   print('  ccswitch clean [--logout]      reset ccswitch data; --logout also signs out of');
   print('                                 Claude Code + the desktop app (asks to confirm)');
   print('');
-  print('Also available: switch, capture-app, save, consolidate, current, version.');
   print('Tokens stay in the OS credential store; ~/.claude/projects history is account-independent.');
 }
 
@@ -42,7 +42,7 @@ function confirm(question) {
 
 async function cmdSwitch(ctx, rest) {
   const arg = rest[0];
-  if (!arg) return fail('usage: ccswitch switch <name|number> [--restart|--force]');
+  if (!arg) return fail('usage: ccswitch <name|number> [--restart|--force]');
   const autoYes = rest.indexOf('--restart') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
   const force = rest.indexOf('--force') !== -1;
   const name = core.resolveProfile(ctx, arg);
@@ -143,8 +143,19 @@ function captureApp(ctx, nameArg) {
 
 // Unified `add`: capture EVERYTHING that's currently logged in — the Claude Code
 // (CLI) account and/or the desktop app's account — creating profiles as needed.
+// `--app` limits it to the desktop app (use with a name when auto-detect can't
+// identify which account the app is signed into).
 function cmdAdd(ctx, rest) {
-  const nameArg = rest[0];
+  const appOnly = rest.indexOf('--app') !== -1;
+  const nameArg = rest.filter(function (a) { return a.indexOf('--') !== 0; })[0];
+
+  if (appOnly) {
+    const r = captureApp(ctx, nameArg || null);
+    if (r.ok) { print("💾 Desktop app login: captured as '" + r.name + "'" + (r.email ? ' (' + r.email + ')' : '') + '.'); return; }
+    if (r.needName) return fail("Couldn't auto-identify the app's account. Name it:  ccswitch add <name> --app");
+    return fail('Could not capture the desktop-app login: ' + (r.reason === 'macos-only' ? 'the desktop app store is macOS-only.' : r.reason));
+  }
+
   let cliRes = null, cliErr = null;
   try { cliRes = core.addCurrent(ctx, nameArg); } catch (e) { cliErr = (e && e.message) || String(e); }
   if (cliRes) {
@@ -157,23 +168,21 @@ function cmdAdd(ctx, rest) {
   const appRes = captureApp(ctx, cliRes ? null : nameArg);
   if (appRes.ok) {
     print("💾 Desktop app login: captured as '" + appRes.name + "'" + (appRes.email ? ' (' + appRes.email + ')' : '') + '.');
-  } else if (appRes.needName) {
-    print("↳ The desktop app is signed in, but I couldn't identify its account.");
-    print("  If it's a different account than the CLI, capture it with:  ccswitch add <name>  (while the CLI is logged out)");
   }
 
-  if (!cliRes && !appRes.ok && !appRes.needName) {
+  if (!cliRes && !appRes.ok) {
+    if (appRes.needName) {
+      return fail("The desktop app is signed in, but I couldn't identify its account.\n" +
+        'Name it yourself:  ccswitch add <name> --app');
+    }
     return fail('Nothing to capture. Log in in Claude first.' + (cliErr ? '\n(CLI: ' + cliErr + ')' : ''));
+  }
+  if (cliRes && appRes.needName) {
+    print("↳ The desktop app is signed in but its account couldn't be identified. If it's a");
+    print('  different account than the CLI, capture it with:  ccswitch add <name> --app');
   }
   const anyIncomplete = profiles.list(ctx.configDir).some(function (n) { return !ctx.store.getProfile(n) || !appauth.hasProfile(ctx, n); });
   if (anyIncomplete) print("Tip: 'ccswitch list' shows what each account has captured ([cli|app]).");
-}
-
-function cmdCaptureApp(ctx, rest) { // kept as an explicit/advanced alias
-  const r = captureApp(ctx, rest[0] || null);
-  if (r.ok) { print("✅ Captured the desktop app's current login as '" + r.name + "'" + (r.email ? ' (' + r.email + ')' : '') + '.'); return; }
-  if (r.needName) return fail("Couldn't auto-identify the app's account. Name it yourself:  ccswitch capture-app <name>");
-  return fail('Could not capture the desktop-app login: ' + (r.reason === 'macos-only' ? 'the desktop app store is macOS-only.' : r.reason));
 }
 
 function consolidateAndReport(ctx) {
@@ -182,46 +191,6 @@ function consolidateAndReport(ctx) {
   const c = appsessions.consolidate(ctx);
   if (c.ok && c.merged) print('  ↳ shared ' + c.merged + ' session pointer(s) so every account shows them all.');
   return c;
-}
-
-function reportConsolidate(ctx) {
-  const c = appsessions.consolidate(ctx);
-  if (!c.ok) { print('Nothing to consolidate: ' + c.reason); return c; }
-  if (!c.merged) { print('Already consolidated — every account already has all Code sessions.'); return c; }
-  print('✅ Shared ' + c.merged + ' session pointer(s) across your accounts' + (c.backup ? ' (backup: ' + c.backup + ')' : '') + '.');
-  return c;
-}
-
-async function cmdConsolidate(ctx, rest) {
-  const autoYes = rest.indexOf('--restart') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
-  const force = rest.indexOf('--force') !== -1; // merge in place, don't close the app
-  const running = appctl.isClaudeRunning(ctx.platform);
-  const manage = appctl.canManageApp(ctx.platform);
-
-  if (running && manage && !force) {
-    if (!autoYes) {
-      if (!process.stdin.isTTY) {
-        return fail('Claude is open. Re-run with --restart to close & reopen it automatically, ' +
-          '--force to merge without closing (then restart Claude yourself), or quit Claude first.');
-      }
-      const ok = await confirm('Claude will be closed, your sessions consolidated, and Claude reopened. Continue? [y/N] ');
-      if (!ok) { print('Cancelled — nothing was changed.'); return; }
-    }
-    print('Quitting Claude...'); appctl.quitClaude(ctx.platform); await waitForQuit(ctx);
-    if (appctl.isClaudeRunning(ctx.platform)) return fail('Claude did not quit; aborting so nothing is written into a live store.');
-    const c = reportConsolidate(ctx);
-    print('Reopening Claude...'); appctl.openClaude(ctx.platform);
-    if (c.ok && c.merged) print('Done — all your Code sessions are now in Recents.');
-    return;
-  }
-
-  // App not running, or --force (merge in place), or a platform we can't manage.
-  const c = reportConsolidate(ctx);
-  if (c.ok && c.merged) {
-    print(running ? '↪ Fully quit and reopen Claude to see them all in Recents.'
-                  : '↪ Open Claude to see them all in Recents.');
-    print('(Cloud "Chat" conversations stay per-account and are not touched.)');
-  }
 }
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -298,7 +267,7 @@ async function cmdClean(ctx, rest) {
 function cmdList(ctx) {
   const list = core.listProfiles(ctx);
   print('Saved accounts (' + ctx.configDir + '):');
-  if (!list.length) { print("  (none yet — 'ccswitch add' for the CLI login, 'ccswitch capture-app' for the desktop app)"); }
+  if (!list.length) { print("  (none yet — log in in Claude, then run 'ccswitch add')"); }
   else {
     list.forEach(function (e) {
       const cli = !!ctx.store.getProfile(e.name);
@@ -320,43 +289,20 @@ async function main(argv) {
       case undefined:
         if (!process.stdin.isTTY) { usage(); return; }
         return require('./menu').runMenu(ctx);
-      case 'menu':
+      case 'menu': // hidden: used by the launcher app; same as bare `ccswitch`
         return require('./menu').runMenu(ctx);
       case 'add':
-      case 'capture':
         return cmdAdd(ctx, rest);
-      case 'capture-app':
-      case 'app-capture':
-        return cmdCaptureApp(ctx, rest);
-      case 'save':
-        if (!rest[0]) return fail('usage: ccswitch save <name>');
-        core.saveAs(ctx, rest[0]);
-        print("💾 saved as '" + rest[0] + "'");
-        return;
-      case 'switch':
-      case 'use':
-        return cmdSwitch(ctx, rest);
       case 'list':
-      case 'ls':
         return cmdList(ctx);
-      case 'current':
-      case 'who':
-        print('Active account: ' + (core.currentEmail(ctx) || 'unknown'));
-        return;
-      case 'remove':
-      case 'rm':
-      case 'delete': {
+      case 'remove': {
         const n = core.resolveProfile(ctx, rest[0]);
-        if (!n) return fail("no such profile: '" + (rest[0] || '') + "'");
+        if (!n) return fail("no such account: '" + (rest[0] || '') + "'");
         core.removeProfile(ctx, n);
         print('🗑  removed: ' + n);
         return;
       }
-      case 'consolidate':
-      case 'merge':
-        return cmdConsolidate(ctx, rest);
       case 'clean':
-      case 'reset':
         return cmdClean(ctx, rest);
       case 'version':
       case '--version':
@@ -369,7 +315,7 @@ async function main(argv) {
         usage();
         return;
       default: {
-        // `ccswitch <name|number>` is a direct switch — no need to type "switch".
+        // `ccswitch <name|number>` switches directly.
         if (core.resolveProfile(ctx, cmd)) return cmdSwitch(ctx, [cmd].concat(rest));
         process.stderr.write("ccswitch: unknown command or account '" + cmd + "'\n\n");
         usage();

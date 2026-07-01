@@ -96,7 +96,6 @@ ccswitch remove <name|number>  # delete a saved account
 ccswitch clean [--logout]      # reset ccswitch data; --logout also signs out everywhere
 ```
 
-<sub>Also available: `switch`, `capture-app`, `save`, `consolidate`, `current`, `version`.</sub>
 
 ### Seeing all your sessions after a switch (macOS)
 
@@ -107,7 +106,7 @@ so by default each account only shows the Code sessions you started under it.
 On every switch (while the app is closed), ccswitch **consolidates** that index —
 copying the Code-session pointers from your other accounts into the active one, so
 its Recents shows them all. It backs up the store first and only ever *adds* files
-(never deletes). Run it manually anytime with `ccswitch consolidate`.
+(never deletes).
 
 > Your `~/.claude/projects` transcripts are account-independent already; this just
 > makes the app's list surface them. **Cloud "Chat" conversations (claude.ai) are
@@ -118,7 +117,7 @@ its Recents shows them all. It backs up the store first and only ever *adds* fil
 The Claude **desktop app** has its own login, separate from the CLI. Its *actual*
 session is the claude.ai cookie in its `Cookies` DB (the `oauth:tokenCache` blobs
 in `config.json` are just a cache the app re-derives from that cookie on launch).
-ccswitch therefore captures and swaps **both** — so `ccswitch switch` can flip the
+ccswitch therefore captures and swaps **both** — so `ccswitch <name>` can flip the
 CLI *and* the desktop app to the same account, once each account's desktop login
 has been captured.
 
@@ -127,7 +126,7 @@ different accounts at the same time. `ccswitch add` captures **whatever is signe
 in right now**: the CLI login and/or the desktop app's (auto-detected). So per
 account: sign in (app and/or CLI), run `ccswitch add`, done. `ccswitch list`
 shows what each account has captured (`[cli ✓|— | app ✓|—]`); if the app's account
-can't be auto-identified, name it explicitly (`ccswitch capture-app <name>`).
+can't be auto-identified, name it explicitly (`ccswitch add <name> --app`).
 
 After that, `ccswitch <name>` (app closed → reopened) swaps the CLI creds **and**
 the desktop-app login (token + session cookie), so both come up on the chosen
@@ -139,7 +138,7 @@ account — no manual re-login. `config.json` and the cookie DB are backed up fi
 > re-`add` that account. Restore a backup if anything looks off.
 
 > Switching should happen while Claude is closed, or Claude may overwrite the change on exit.
-> - **Interactive** (menu, or `switch` in a terminal): if Claude is open you're **asked before it's closed** — answer *no* to cancel.
+> - **Interactive** (menu, or `ccswitch <name>` in a terminal): if Claude is open you're **asked before it's closed** — answer *no* to cancel.
 > - `--restart`: close & reopen Claude without asking (macOS).
 > - `--force`: switch without closing Claude — restart it yourself afterward.
 > - Non-interactive (piped/CI) with Claude open and no flag: refuses rather than closing your app unexpectedly.
