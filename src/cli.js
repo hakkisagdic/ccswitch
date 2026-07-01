@@ -4,6 +4,7 @@ const { createContext } = require('./context');
 const core = require('./core');
 const profiles = require('./profiles');
 const appctl = require('./platform');
+const appsessions = require('./appsessions');
 
 let VERSION = '0.0.0';
 try { VERSION = require('../package.json').version; } catch (e) { /* ignore */ }
@@ -20,6 +21,8 @@ function usage() {
   print('  ccswitch list                  list saved accounts (* = active)');
   print('  ccswitch remove <name|number>  delete a saved account');
   print('  ccswitch current               show the active account');
+  print('  ccswitch consolidate           merge the desktop app\'s Code sessions from all');
+  print('                                 accounts into the active one (macOS; runs on switch too)');
   print('  ccswitch version');
   print('');
   print('How it works: OAuth tokens stay in the OS credential store (macOS Keychain, or');
@@ -65,6 +68,7 @@ async function cmdSwitch(ctx, rest) {
     }
     print('Quitting Claude...'); appctl.quitClaude(ctx.platform); await waitForQuit(ctx);
     core.doSwitch(ctx, name);
+    consolidateAndReport(ctx);
     print('Reopening Claude...'); appctl.openClaude(ctx.platform);
     print('✅ Switched to: ' + (em || name));
     return;
@@ -80,7 +84,14 @@ async function cmdSwitch(ctx, rest) {
   }
   // Not running: just swap.
   core.doSwitch(ctx, name);
+  consolidateAndReport(ctx);
   print('✅ Switched to: ' + (em || name) + (manage ? '' : '. Restart Claude Code to apply.'));
+}
+
+function consolidateAndReport(ctx) {
+  const c = appsessions.consolidate(ctx);
+  if (c.ok && c.merged) print('  ↳ pulled ' + c.merged + ' session(s) from your other account(s) into this one.');
+  return c;
 }
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -143,6 +154,17 @@ async function main(argv) {
         if (!n) return fail("no such profile: '" + (rest[0] || '') + "'");
         core.removeProfile(ctx, n);
         print('🗑  removed: ' + n);
+        return;
+      }
+      case 'consolidate':
+      case 'merge': {
+        if (appctl.isClaudeRunning(ctx.platform) && rest.indexOf('--force') === -1) {
+          return fail('Close Claude / Claude Code first (its session store is open), then re-run — or pass --force.');
+        }
+        const c = appsessions.consolidate(ctx);
+        if (!c.ok) { print('Nothing to consolidate: ' + c.reason); return; }
+        print('✅ Consolidated ' + c.merged + ' Code session(s) into the active account' + (c.backup ? ' (backup: ' + c.backup + ')' : '') + '.');
+        print('Restart Claude to see them all in Recents. (Cloud "Chat" conversations stay per-account.)');
         return;
       }
       case 'version':

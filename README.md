@@ -94,8 +94,24 @@ ccswitch switch <name> --restart  # close & reopen Claude automatically (no prom
 ccswitch switch <name> --force    # swap without closing Claude (restart it yourself)
 ccswitch remove <name|number>  # delete a saved account
 ccswitch current               # show the active account
+ccswitch consolidate           # merge the desktop app's Code sessions across accounts (macOS)
 ccswitch version
 ```
+
+### Seeing all your sessions after a switch (macOS)
+
+The Claude **desktop app** keeps its "Recents" as a per-account index at
+`~/Library/Application Support/Claude/claude-code-sessions/<accountUuid>/<orgUuid>/`,
+so by default each account only shows the Code sessions you started under it.
+
+On every switch (while the app is closed), ccswitch **consolidates** that index —
+copying the Code-session pointers from your other accounts into the active one, so
+its Recents shows them all. It backs up the store first and only ever *adds* files
+(never deletes). Run it manually anytime with `ccswitch consolidate`.
+
+> Your `~/.claude/projects` transcripts are account-independent already; this just
+> makes the app's list surface them. **Cloud "Chat" conversations (claude.ai) are
+> not touched** — they live server-side per account and can't be merged locally.
 
 > Switching should happen while Claude is closed, or Claude may overwrite the change on exit.
 > - **Interactive** (menu, or `switch` in a terminal): if Claude is open you're **asked before it's closed** — answer *no* to cancel.

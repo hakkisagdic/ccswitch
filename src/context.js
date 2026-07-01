@@ -24,6 +24,12 @@ function createContext(opts) {
   const claudeConfigPath = opts.claudeConfigPath || path.join(home, '.claude.json');
   const credsFilePath = opts.credsFilePath || path.join(home, '.claude', '.credentials.json');
 
+  // The Claude desktop app's data dir (holds its account-keyed session index).
+  let appDataDir = opts.appDataDir;
+  if (appDataDir === undefined) {
+    appDataDir = platform === 'darwin' ? path.join(home, 'Library', 'Application Support', 'Claude') : null;
+  }
+
   let account = opts.account;
   if (!account) {
     try { account = os.userInfo().username; } catch (e) { account = process.env.USER || process.env.USERNAME || 'user'; }
@@ -44,6 +50,7 @@ function createContext(opts) {
     configDir: configDir,
     claudeConfigPath: claudeConfigPath,
     credsFilePath: credsFilePath,
+    appDataDir: appDataDir,
     account: account,
     store: store,
     now: now,

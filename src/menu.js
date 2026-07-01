@@ -6,6 +6,7 @@ const readline = require('readline');
 const core = require('./core');
 const profiles = require('./profiles');
 const appctl = require('./platform');
+const appsessions = require('./appsessions');
 
 function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
@@ -46,6 +47,8 @@ async function switchInteractive(ctx, name, p, rl) {
     for (let i = 0; i < 40 && appctl.isClaudeRunning(ctx.platform); i++) { await delay(500); }
   }
   core.doSwitch(ctx, name);
+  const cons = appsessions.consolidate(ctx);
+  if (cons.ok && cons.merged) p('  ↳ pulled ' + cons.merged + ' session(s) from your other account(s) into this one.');
   if (running) { p('  Reopening Claude...'); appctl.openClaude(ctx.platform); }
   const em = profiles.email(ctx.configDir, name);
   p('  ✅ Switched to: ' + (em || name));
@@ -203,6 +206,8 @@ function runMenuKeys(ctx, io) {
         for (let i = 0; i < 40 && appctl.isClaudeRunning(ctx.platform); i++) { await delay(500); }
       }
       core.doSwitch(ctx, name);
+      const cons = appsessions.consolidate(ctx);
+      if (cons.ok && cons.merged) write('  ↳ pulled ' + cons.merged + ' session(s) from your other account(s) into this one.\n');
       if (running) { write('  Reopening Claude...\n'); appctl.openClaude(ctx.platform); }
       const em = profiles.email(ctx.configDir, name);
       write('  ✅ Switched to: ' + (em || name) + '\n');
