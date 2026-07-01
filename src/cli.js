@@ -101,6 +101,9 @@ function switchDesktopLogin(ctx, name) {
   if (appctl.isClaudeRunning(ctx.platform)) return { ok: false };
   const a = appauth.applyFromProfile(ctx, name);
   if (a.ok) print('  ↳ switched the Claude desktop-app login too.');
+  else if (a.reason && a.reason !== 'no saved desktop login for this profile') {
+    print('  ⚠️ desktop app NOT switched: ' + a.reason);
+  }
   return a;
 }
 
@@ -138,20 +141,48 @@ function captureApp(ctx, nameArg) {
   }
   const r = appauth.snapshotToProfile(ctx, name);
   if (!r.ok) return { ok: false, reason: r.reason };
-  return { ok: true, name: name, email: email };
+  return { ok: true, name: name, email: email, cookies: r.cookies };
+}
+
+// A fresh login may only exist in the app's memory — Chromium flushes cookies on
+// a clean quit. Fix an incomplete capture by briefly closing the app.
+async function repairCookieCapture(ctx, name) {
+  if (!appctl.canManageApp(ctx.platform) || !appctl.isClaudeRunning(ctx.platform)) return 'incomplete';
+  if (!process.stdin.isTTY) return 'incomplete';
+  const ok = await confirm("Claude hasn't saved this fresh login to disk yet. Briefly close & reopen it to capture it? [y/N] ");
+  if (!ok) return 'incomplete';
+  print('Quitting Claude...'); appctl.quitClaude(ctx.platform); await waitForQuit(ctx);
+  let status = 'incomplete';
+  if (!appctl.isClaudeRunning(ctx.platform)) {
+    const r = appauth.snapshotToProfile(ctx, name);
+    status = (r.ok && r.cookies) || 'incomplete';
+  }
+  print('Reopening Claude...'); appctl.openClaude(ctx.platform);
+  return status;
+}
+
+function warnIncompleteCookies(name) {
+  print("⚠️  The login cookie isn't captured for '" + name + "' yet, so switching the desktop app");
+  print('   to it will NOT work. Quit Claude fully, reopen it, and run:  ccswitch add');
 }
 
 // Unified `add`: capture EVERYTHING that's currently logged in — the Claude Code
 // (CLI) account and/or the desktop app's account — creating profiles as needed.
 // `--app` limits it to the desktop app (use with a name when auto-detect can't
 // identify which account the app is signed into).
-function cmdAdd(ctx, rest) {
+async function cmdAdd(ctx, rest) {
   const appOnly = rest.indexOf('--app') !== -1;
   const nameArg = rest.filter(function (a) { return a.indexOf('--') !== 0; })[0];
 
   if (appOnly) {
     const r = captureApp(ctx, nameArg || null);
-    if (r.ok) { print("💾 Desktop app login: captured as '" + r.name + "'" + (r.email ? ' (' + r.email + ')' : '') + '.'); return; }
+    if (r.ok) {
+      print("💾 Desktop app login: captured as '" + r.name + "'" + (r.email ? ' (' + r.email + ')' : '') + '.');
+      let ck = r.cookies;
+      if (ck !== 'ok') ck = await repairCookieCapture(ctx, r.name);
+      if (ck !== 'ok') warnIncompleteCookies(r.name);
+      return;
+    }
     if (r.needName) return fail("Couldn't auto-identify the app's account. Name it:  ccswitch add <name> --app");
     return fail('Could not capture the desktop-app login: ' + (r.reason === 'macos-only' ? 'the desktop app store is macOS-only.' : r.reason));
   }
@@ -168,6 +199,9 @@ function cmdAdd(ctx, rest) {
   const appRes = captureApp(ctx, cliRes ? null : nameArg);
   if (appRes.ok) {
     print("💾 Desktop app login: captured as '" + appRes.name + "'" + (appRes.email ? ' (' + appRes.email + ')' : '') + '.');
+    let ck = appRes.cookies;
+    if (ck !== 'ok') ck = await repairCookieCapture(ctx, appRes.name);
+    if (ck !== 'ok') warnIncompleteCookies(appRes.name);
   }
 
   if (!cliRes && !appRes.ok) {

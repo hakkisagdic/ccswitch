@@ -63,6 +63,7 @@ async function switchInteractive(ctx, name, p, rl) {
   if (!did.cli) p("  ↳ CLI login for this profile isn't captured — switching the desktop app only.");
   const appl = switchDesktopSilent(ctx, name);
   if (appl.ok) p('  ↳ switched the Claude desktop-app login too.');
+  else if (appl.reason && appl.reason !== 'no saved desktop login for this profile') p('  ⚠️ desktop app NOT switched: ' + appl.reason);
   const cons = consolidateSilent(ctx);
   if (cons.ok && cons.merged) p('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.');
   if (running) { p('  Reopening Claude...'); appctl.openClaude(ctx.platform); }
@@ -225,6 +226,7 @@ function runMenuKeys(ctx, io) {
       if (!did.cli) write("  ↳ CLI login for this profile isn't captured — switching the desktop app only.\n");
       const appl = switchDesktopSilent(ctx, name);
       if (appl.ok) write('  ↳ switched the Claude desktop-app login too.\n');
+      else if (appl.reason && appl.reason !== 'no saved desktop login for this profile') write('  ⚠️ desktop app NOT switched: ' + appl.reason + '\n');
       const cons = consolidateSilent(ctx);
       if (cons.ok && cons.merged) write('  ↳ shared ' + cons.merged + ' session pointer(s) so every account shows them all.\n');
       if (running) { write('  Reopening Claude...\n'); appctl.openClaude(ctx.platform); }

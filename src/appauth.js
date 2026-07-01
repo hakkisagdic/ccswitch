@@ -136,8 +136,28 @@ function detectAppAccount(ctx) {
   return { org: org, account: account, email: email };
 }
 
+// Does a cookie DB (or a snapshot of it) contain the claude.ai login cookie?
+// Cookie NAMES are plaintext in Chromium's DB, so a substring scan is reliable
+// and works on non-SQLite test fixtures too.
+function cookiesLookLoggedIn(file) {
+  try { return fs.readFileSync(file).includes('sessionKey'); } catch (e) { return false; }
+}
+
+// Copy the live Cookies DB as consistently as possible: prefer sqlite3's online
+// .backup (safe while the app writes), fall back to a plain copy.
+function copyCookieDb(src, dest) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  try { fs.rmSync(dest, { force: true }); } catch (e) { /* ignore */ }
+  const r = run('sqlite3', [src, '.backup "' + dest.replace(/"/g, '""') + '"']);
+  if (r.code !== 0 || !fs.existsSync(dest)) fs.copyFileSync(src, dest);
+  try { fs.chmodSync(dest, 0o600); } catch (e) { /* best effort */ }
+}
+
 // Capture the app's current login (token cache + the session Cookies DB that is
-// the actual auth) into profile <name>.
+// the actual auth) into profile <name>. Returns { ok, cookies } where cookies is
+// 'ok' | 'incomplete' | 'missing' — 'incomplete' means the DB was copied but has
+// no sessionKey yet (Chromium hadn't flushed a fresh login to disk; capturing
+// again with the app closed fixes it).
 function snapshotToProfile(ctx, name) {
   const cp = configPath(ctx);
   if (!cp) return { ok: false, reason: 'only the macOS desktop app has this' };
@@ -148,16 +168,16 @@ function snapshotToProfile(ctx, name) {
   KEYS.forEach(function (k) { if (typeof cfg[k] === 'string' && cfg[k]) { snap[k] = cfg[k]; any = true; } });
   if (!any) return { ok: false, reason: 'no desktop login token in config.json' };
   atomicWrite(profilePath(ctx, name), JSON.stringify(snap, null, 2), 0o600);
+  let cookies = 'missing';
   try {
     const ck = cookiesPath(ctx);
     if (ck && fs.existsSync(ck)) {
       const dest = profileCookiesPath(ctx, name);
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.copyFileSync(ck, dest);
-      try { fs.chmodSync(dest, 0o600); } catch (e) { /* best effort */ }
+      copyCookieDb(ck, dest);
+      cookies = cookiesLookLoggedIn(dest) ? 'ok' : 'incomplete';
     }
   } catch (e) { /* cookies snapshot is best-effort */ }
-  return { ok: true };
+  return { ok: true, cookies: cookies };
 }
 
 function pruneConfigBackups(ctx, keep) {
@@ -178,6 +198,15 @@ function applyFromProfile(ctx, name) {
   if (!snap) return { ok: false, reason: 'no saved desktop login for this profile' };
   const cfg = readJSON(cp);
   if (!cfg) return { ok: false, reason: 'no desktop config.json' };
+
+  // The session cookie IS the login. Refuse to restore a snapshot without it —
+  // that would boot the app straight to the login screen (better to leave the
+  // current session in place and say why).
+  const savedCkPre = profileCookiesPath(ctx, name);
+  if (!fs.existsSync(savedCkPre) || !cookiesLookLoggedIn(savedCkPre)) {
+    return { ok: false, reason: "saved desktop login for '" + name + "' has no session cookie — " +
+      "sign the app into that account and run 'ccswitch add' again" };
+  }
 
   // Back up config.json once (keep the last few).
   try {

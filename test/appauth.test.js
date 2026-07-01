@@ -14,7 +14,7 @@ function setup() {
   const cfg = path.join(appDataDir, 'config.json');
   fs.writeFileSync(cfg, JSON.stringify({ locale: 'en-US', 'oauth:tokenCache': 'TOKEN-A-V1', 'oauth:tokenCacheV2': 'TOKEN-A-V2', keep: 'me' }));
   const cookies = path.join(appDataDir, 'Cookies');
-  fs.writeFileSync(cookies, 'COOKIES-A'); // stands in for the SQLite session DB
+  fs.writeFileSync(cookies, 'sessionKey COOKIES-A'); // stands in for the SQLite session DB
   const ctx = { home: home, platform: 'darwin', appDataDir: appDataDir, configDir: path.join(home, '.config', 'ccswitch'), now: function () { return '2026-01-01T00:00:00.000Z'; } };
   return { ctx: ctx, cfg: cfg, cookies: cookies };
 }
@@ -67,11 +67,11 @@ test('snapshot captures the Cookies DB and apply restores it (the real login)', 
   appauth.snapshotToProfile(s.ctx, 'A'); // captures COOKIES-A
   assert.ok(fs.existsSync(appauth.profileCookiesPath(s.ctx, 'A')));
   // app later logged in as B
-  fs.writeFileSync(s.cookies, 'COOKIES-B');
+  fs.writeFileSync(s.cookies, 'sessionKey COOKIES-B');
   fs.writeFileSync(path.join(path.dirname(s.cookies), 'Cookies-journal'), 'B-journal');
   const r = appauth.applyFromProfile(s.ctx, 'A');
   assert.strictEqual(r.ok, true);
-  assert.strictEqual(fs.readFileSync(s.cookies, 'utf8'), 'COOKIES-A'); // session restored
+  assert.strictEqual(fs.readFileSync(s.cookies, 'utf8'), 'sessionKey COOKIES-A'); // session restored
   assert.strictEqual(fs.existsSync(path.join(path.dirname(s.cookies), 'Cookies-journal')), false); // stale journal removed
 });
 
@@ -125,6 +125,7 @@ test('applyFromProfile clears a stale counterpart key (no mismatched V1/V2)', fu
   const s = setup();
   fs.mkdirSync(path.dirname(appauth.profilePath(s.ctx, 'A')), { recursive: true });
   fs.writeFileSync(appauth.profilePath(s.ctx, 'A'), JSON.stringify({ 'oauth:tokenCache': 'A-V1' })); // only V1
+  fs.writeFileSync(appauth.profileCookiesPath(s.ctx, 'A'), 'sessionKey A'); // valid session snapshot
   fs.writeFileSync(s.cfg, JSON.stringify({ 'oauth:tokenCache': 'B-V1', 'oauth:tokenCacheV2': 'B-V2', keep: 'me' })); // app on B, both keys
   const r = appauth.applyFromProfile(s.ctx, 'A');
   assert.strictEqual(r.ok, true);
@@ -132,6 +133,25 @@ test('applyFromProfile clears a stale counterpart key (no mismatched V1/V2)', fu
   assert.strictEqual(cfg['oauth:tokenCache'], 'A-V1');
   assert.strictEqual('oauth:tokenCacheV2' in cfg, false); // stale B-V2 removed
   assert.strictEqual(cfg.keep, 'me');
+});
+
+test('snapshot reports cookies:"incomplete" when the live DB lacks the session cookie', function () {
+  const s = setup();
+  fs.writeFileSync(s.cookies, 'only activitySessionId here'); // fresh login not yet flushed
+  const r = appauth.snapshotToProfile(s.ctx, 'A');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.cookies, 'incomplete');
+});
+
+test('applyFromProfile refuses to restore a snapshot without a session cookie', function () {
+  const s = setup();
+  fs.writeFileSync(s.cookies, 'no session here');
+  appauth.snapshotToProfile(s.ctx, 'A'); // incomplete snapshot
+  const before = fs.readFileSync(s.cfg, 'utf8');
+  const r = appauth.applyFromProfile(s.ctx, 'A');
+  assert.strictEqual(r.ok, false);
+  assert.match(r.reason, /no session cookie/);
+  assert.strictEqual(fs.readFileSync(s.cfg, 'utf8'), before); // nothing was touched
 });
 
 function encryptV10(text, password) {

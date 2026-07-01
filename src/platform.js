@@ -16,8 +16,10 @@ function isClaudeRunning(p) {
   if (t) return t === 'running' && !_testStopped;
   p = plat(p);
   if (p === 'darwin') {
+    // Include "Claude Helper" processes: the network service may outlive the main
+    // binary by a moment while flushing the cookie DB — never write during that.
     const r = run('sh', ['-c',
-      "ps -Axo command | grep -v grep | grep -Ec 'Claude\\.app/Contents/MacOS/Claude|/claude-code/[^ ]*/claude|(^|/)claude( |$)'"]);
+      "ps -Axo command | grep -v grep | grep -Ec 'Claude\\.app/Contents/MacOS/Claude|Claude Helper|/claude-code/[^ ]*/claude|(^|/)claude( |$)'"]);
     return (parseInt((r.stdout || '0').trim(), 10) || 0) > 0;
   }
   if (p === 'win32') {

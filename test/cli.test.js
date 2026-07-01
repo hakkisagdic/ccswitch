@@ -79,7 +79,7 @@ test('capture-app works with NO CLI login — creates an app-only account (macOS
   const appCfgDir = path.join(home, 'Library', 'Application Support', 'Claude');
   fs.mkdirSync(appCfgDir, { recursive: true });
   fs.writeFileSync(path.join(appCfgDir, 'config.json'), JSON.stringify({ 'oauth:tokenCacheV2': 'YAHOO-APP-TOKEN' }));
-  fs.writeFileSync(path.join(appCfgDir, 'Cookies'), 'YAHOO-COOKIES');
+  fs.writeFileSync(path.join(appCfgDir, 'Cookies'), 'sessionKey YAHOO-COOKIES');
 
   const r = run(home, ['add', 'yahoo', '--app']); // named (no auto-detect data in this fake env)
   assert.strictEqual(r.status, 0, r.stderr);
