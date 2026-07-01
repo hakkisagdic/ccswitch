@@ -58,6 +58,18 @@ test('switch changes the active account (via CLI, --force)', function () {
   assert.match(cur.stdout, /alice@example\.com/);
 });
 
+test('capture-app captures the desktop login for a named profile (macOS)', function (t) {
+  if (process.platform !== 'darwin') return t.skip('the desktop app store is macOS-only');
+  const home = setupHome();
+  run(home, ['add']); // -> profile "alice"
+  const appCfgDir = path.join(home, 'Library', 'Application Support', 'Claude');
+  fs.mkdirSync(appCfgDir, { recursive: true });
+  fs.writeFileSync(path.join(appCfgDir, 'config.json'), JSON.stringify({ 'oauth:tokenCacheV2': 'APP-TOKEN' }));
+  const r = run(home, ['capture-app', 'alice']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(fs.existsSync(path.join(home, '.config', 'ccswitch', 'app', 'alice.json')), 'app token saved');
+});
+
 test('an unknown command exits non-zero', function () {
   const home = setupHome();
   const r = run(home, ['definitely-not-a-command']);

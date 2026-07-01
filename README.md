@@ -121,16 +121,18 @@ The Claude **desktop app** has its own login, separate from the CLI: encrypted
 *and* the desktop app to the same account — but it first needs each account's
 desktop login captured.
 
-**Bootstrap (once per account):**
-1. In the desktop app, sign in to the account (Claude menu → your account). This
-   logs both the app and Claude Code into it — check with `ccswitch current`.
-2. Run `ccswitch add`. Alongside the CLI creds it captures that account's desktop
-   login (you'll see “also captured this account's desktop-app login”).
-3. Repeat for your other account(s).
+The desktop app's login is **independent** from the CLI's — they can even be on
+different accounts at the same time — so capture each separately:
 
-After that, `ccswitch switch <name>` (with the app closed → reopened) swaps the CLI
-creds **and** the desktop-app token, so both come up on the chosen account — no
-manual re-login. `config.json` is backed up first (`~/.config/ccswitch/backups/`).
+- **CLI account:** while Claude Code is logged in to it, run `ccswitch add`.
+- **Desktop app:** sign the app into an account (Claude menu → your account), then
+  run `ccswitch capture-app`. It **auto-detects** which saved account the app is on
+  and attaches its login to that profile (or pass a name: `ccswitch capture-app <name>`).
+
+Repeat `capture-app` once per account the app is signed into. After that,
+`ccswitch switch <name>` (app closed → reopened) swaps the CLI creds **and** the
+desktop-app token, so both come up on the chosen account — no manual re-login.
+`config.json` is backed up first (`~/.config/ccswitch/backups/`).
 
 > Experimental: it rewrites the app's `config.json` login while the app is closed.
 > If a saved token has fully expired the app may ask you to log in again; just

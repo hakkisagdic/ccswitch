@@ -84,8 +84,6 @@ async function menuAdd(ctx, rl, p) {
   const r = core.addCurrent(ctx, ans === '' ? undefined : ans);
   p(r.refreshed ? "  ↻ '" + r.email + "' already saved as '" + r.name + "' — refreshed."
                 : "  💾 saved '" + r.email + "' as '" + r.name + "'.");
-  const a = appauth.snapshotToProfile(ctx, r.name);
-  if (a.ok) p("  ↳ also captured this account's Claude desktop-app login.");
 }
 
 async function menuRemove(ctx, rl, p) {

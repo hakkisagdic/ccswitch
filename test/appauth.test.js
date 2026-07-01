@@ -68,6 +68,22 @@ test('app-login snapshots live in app/ and do NOT pollute profiles.list()', func
   assert.ok(appauth.hasProfile(s.ctx, 'alice'));
 });
 
+test('detectActiveOrg returns the org with the most recent allowlist timestamp', function () {
+  const s = setup();
+  fs.writeFileSync(s.cfg, JSON.stringify({
+    'oauth:tokenCacheV2': 'T',
+    'dxt:allowlistLastUpdated:ORG-GMAIL': '2026-07-01T12:00:00.000Z',
+    'dxt:allowlistLastUpdated:ORG-YAHOO': '2026-07-01T19:00:00.000Z',
+  }));
+  assert.strictEqual(appauth.detectActiveOrg(s.ctx), 'ORG-YAHOO');
+});
+
+test('detectActiveOrg returns null when there is no app store', function () {
+  const s = setup();
+  s.ctx.appDataDir = null;
+  assert.strictEqual(appauth.detectActiveOrg(s.ctx), null);
+});
+
 test('applyFromProfile clears a stale counterpart key (no mismatched V1/V2)', function () {
   const s = setup();
   fs.mkdirSync(path.dirname(appauth.profilePath(s.ctx, 'A')), { recursive: true });

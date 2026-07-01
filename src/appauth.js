@@ -25,6 +25,22 @@ function hasProfile(ctx, name) {
   try { return fs.existsSync(profilePath(ctx, name)); } catch (e) { return false; }
 }
 
+// Best-effort: which org the desktop app is currently signed into, inferred from
+// the most recently touched "dxt:allowlistLastUpdated:<orgUuid>" key in config.json.
+// Lets `capture-app` attach the token to the right account without trusting the CLI.
+function detectActiveOrg(ctx) {
+  const cp = configPath(ctx);
+  if (!cp) return null;
+  const cfg = readJSON(cp);
+  if (!cfg) return null;
+  let best = null, bestTs = '';
+  Object.keys(cfg).forEach(function (k) {
+    const m = /^dxt:allowlistLastUpdated:(.+)$/.exec(k);
+    if (m && typeof cfg[k] === 'string' && cfg[k] > bestTs) { bestTs = cfg[k]; best = m[1]; }
+  });
+  return best;
+}
+
 // Capture the app's current login tokens into profile <name>.
 function snapshotToProfile(ctx, name) {
   const cp = configPath(ctx);
@@ -84,6 +100,7 @@ module.exports = {
   snapshotToProfile: snapshotToProfile,
   applyFromProfile: applyFromProfile,
   hasProfile: hasProfile,
+  detectActiveOrg: detectActiveOrg,
   configPath: configPath,
   profilePath: profilePath,
   KEYS: KEYS,
