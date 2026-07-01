@@ -16,7 +16,9 @@ const { atomicWrite } = require('./fsutil');
 const KEYS = ['oauth:tokenCache', 'oauth:tokenCacheV2'];
 
 function configPath(ctx) { return ctx.appDataDir ? path.join(ctx.appDataDir, 'config.json') : null; }
-function profilePath(ctx, name) { return path.join(ctx.configDir, name + '.app.json'); }
+// Kept in an "app/" subdir so it never shows up in profiles.list() (which scans
+// configDir for <name>.json).
+function profilePath(ctx, name) { return path.join(ctx.configDir, 'app', name + '.json'); }
 function readJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { return null; } }
 
 function hasProfile(ctx, name) {
@@ -63,8 +65,13 @@ function applyFromProfile(ctx, name) {
     pruneConfigBackups(ctx, 5);
   } catch (e) { /* non-fatal */ }
 
+  // Restore exactly the snapshot's token keys; clear any counterpart that isn't in
+  // the snapshot, so we never leave a stale V1/V2 blob from the previous account.
   let changed = false;
-  KEYS.forEach(function (k) { if (typeof snap[k] === 'string') { cfg[k] = snap[k]; changed = true; } });
+  KEYS.forEach(function (k) {
+    if (typeof snap[k] === 'string') { cfg[k] = snap[k]; changed = true; }
+    else if (k in cfg) { delete cfg[k]; changed = true; }
+  });
   if (!changed) return { ok: false, reason: 'saved desktop login was empty' };
 
   let mode = 0o600;

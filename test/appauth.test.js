@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const appauth = require('../src/appauth');
+const profiles = require('../src/profiles');
 const { tmpdir } = require('./helpers');
 
 function setup() {
@@ -57,4 +58,25 @@ test('snapshotToProfile is not-ok when config.json has no token', function () {
   const s = setup();
   fs.writeFileSync(s.cfg, JSON.stringify({ locale: 'en-US' }));
   assert.strictEqual(appauth.snapshotToProfile(s.ctx, 'A').ok, false);
+});
+
+test('app-login snapshots live in app/ and do NOT pollute profiles.list()', function () {
+  const s = setup();
+  profiles.write(s.ctx.configDir, { name: 'alice', email: 'a@x.com' });
+  appauth.snapshotToProfile(s.ctx, 'alice');
+  assert.deepStrictEqual(profiles.list(s.ctx.configDir), ['alice']); // no phantom 'alice.app'
+  assert.ok(appauth.hasProfile(s.ctx, 'alice'));
+});
+
+test('applyFromProfile clears a stale counterpart key (no mismatched V1/V2)', function () {
+  const s = setup();
+  fs.mkdirSync(path.dirname(appauth.profilePath(s.ctx, 'A')), { recursive: true });
+  fs.writeFileSync(appauth.profilePath(s.ctx, 'A'), JSON.stringify({ 'oauth:tokenCache': 'A-V1' })); // only V1
+  fs.writeFileSync(s.cfg, JSON.stringify({ 'oauth:tokenCache': 'B-V1', 'oauth:tokenCacheV2': 'B-V2', keep: 'me' })); // app on B, both keys
+  const r = appauth.applyFromProfile(s.ctx, 'A');
+  assert.strictEqual(r.ok, true);
+  const cfg = JSON.parse(fs.readFileSync(s.cfg, 'utf8'));
+  assert.strictEqual(cfg['oauth:tokenCache'], 'A-V1');
+  assert.strictEqual('oauth:tokenCacheV2' in cfg, false); // stale B-V2 removed
+  assert.strictEqual(cfg.keep, 'me');
 });
