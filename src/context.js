@@ -21,8 +21,16 @@ function createContext(opts) {
     }
   }
 
-  const claudeConfigPath = opts.claudeConfigPath || path.join(home, '.claude.json');
-  const credsFilePath = opts.credsFilePath || path.join(home, '.claude', '.credentials.json');
+  // Where Claude Code keeps its own config/credentials. Resolution order:
+  //   explicit opts (tests) -> CLAUDE_CONFIG_DIR (Claude's own override) -> default.
+  // When CLAUDE_CONFIG_DIR points at a relocated home's .claude dir, Claude puts
+  // .claude.json in the PARENT (like a real Linux home), so mirror that.
+  const claudeDir = opts.claudeDir || process.env.CLAUDE_CONFIG_DIR ||
+    path.join(home, '.claude');
+  const claudeHome = path.basename(claudeDir) === '.claude' ? path.dirname(claudeDir) : claudeDir;
+  const claudeConfigPath = opts.claudeConfigPath || path.join(claudeHome, '.claude.json');
+  const credsFilePath = opts.credsFilePath || path.join(claudeDir, '.credentials.json');
+  const claudeSettingsPath = opts.claudeSettingsPath || path.join(claudeDir, 'settings.json');
 
   // The Claude desktop app's data dir (holds its account-keyed session index).
   let appDataDir = opts.appDataDir;
@@ -48,8 +56,10 @@ function createContext(opts) {
     home: home,
     platform: platform,
     configDir: configDir,
+    claudeDir: claudeDir,
     claudeConfigPath: claudeConfigPath,
     credsFilePath: credsFilePath,
+    claudeSettingsPath: claudeSettingsPath,
     appDataDir: appDataDir,
     account: account,
     store: store,

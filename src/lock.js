@@ -24,7 +24,10 @@ function makeToken() {
 // code 'ELOCKED' if another live keyflip holds it past timeoutMs.
 async function acquire(configDir, opts) {
   opts = opts || {};
-  const file = path.join(configDir, '.lock');
+  // Per-resource locking: distinct resources (claude-cli, claude-desktop,
+  // session-<name>, provider) serialize independently, so a desktop swap and a
+  // CLI switch don't block each other while two CLI switches still can't race.
+  const file = path.join(configDir, opts.resource ? '.lock-' + opts.resource : '.lock');
   const timeoutMs = opts.timeoutMs !== undefined ? opts.timeoutMs : 10000;
   // Only reclaim a *live* holder's lock after this long (a stuck/crashed-but-pid-
   // reused process). Real mutations finish in seconds; 5 min avoids ever stealing
