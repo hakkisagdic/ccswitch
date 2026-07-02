@@ -27,6 +27,7 @@ const skill = require('./skill');
 const mcpreg = require('./mcpreg');
 const desktopgw = require('./desktopgw');
 const sync = require('./sync');
+const sessions = require('./sessions');
 const mcp = require('./mcp');
 const style = require('./style').make(process.stdout);
 
@@ -627,6 +628,77 @@ async function cmdSync(ctx, rest) {
   return fail('usage: keyflip sync [test|push|pull] --url <webdav-url> --passphrase-file <file> [--user U --pass-file f]');
 }
 
+// Skills marketplace: install arbitrary skills from GitHub/dir/archive.
+async function cmdSkill(ctx, rest) {
+  const skillstore = require('./skillstore');
+  const sub = rest[0]; const args = rest.slice(1);
+  if (sub === 'add') {
+    const src = args.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+    if (!src) return fail('usage: keyflip skill add <owner/repo[@ref][/subdir] | ./dir | file.tar.gz> [--link] [--force]');
+    let r;
+    try { r = await skillstore.add(ctx, src, { link: args.indexOf('--link') !== -1, force: args.indexOf('--force') !== -1 }); }
+    catch (e) { return fail(e.message); }
+    print(style.ok('✅') + ' installed ' + r.length + ' skill(s): ' + r.map(function (s) { return s.name + ' (' + s.mode + ')'; }).join(', '));
+    print('Claude Code picks them up next session.');
+    return;
+  }
+  if (sub === 'list' || sub === undefined) {
+    const items = skillstore.list(ctx);
+    if (JSON_MODE) { jsonOut({ skills: items }); return; }
+    if (!items.length) { print('No keyflip-installed skills (add one: keyflip skill add owner/repo).'); return; }
+    items.forEach(function (s) { print('  ' + s.name + '   ' + (s.source || '') + '   [' + s.mode + ']'); });
+    return;
+  }
+  if (sub === 'remove' || sub === 'rm') {
+    try { skillstore.remove(ctx, args[0]); } catch (e) { return fail(e.message); }
+    print('🗑  removed skill: ' + args[0]);
+    return;
+  }
+  return fail('usage: keyflip skill [add <src>|list|remove <name>]');
+}
+
+// Session manager: browse/search/resume Claude Code conversations (all accounts).
+function flagVal(rest, flag) { const i = rest.indexOf(flag); return i !== -1 ? rest[i + 1] : null; }
+function cmdSessions(ctx, rest) {
+  const opts = {
+    search: flagVal(rest, '--search'),
+    cwd: rest.indexOf('--cwd') !== -1 ? (flagVal(rest, '--cwd') === undefined ? '.' : flagVal(rest, '--cwd')) : null,
+    limit: parseInt(flagVal(rest, '--limit'), 10) || 40,
+  };
+  if (rest.indexOf('--here') !== -1) opts.cwd = '.';
+  const rows = sessions.list(ctx, opts);
+  if (JSON_MODE) { jsonOut({ sessions: rows.map(function (r) { return { sessionId: r.sessionId, cwd: r.cwd, mtime: r.mtime, sizeBytes: r.sizeBytes, preview: r.preview }; }) }); return; }
+  if (!rows.length) { print('No sessions found' + (opts.search ? ' matching "' + opts.search + '"' : '') + '.'); return; }
+  rows.forEach(function (r, i) {
+    print('  [' + (i + 1) + '] ' + r.sessionId.slice(0, 8) + '  ' + r.mtime.slice(0, 16).replace('T', ' ') + '  ' + (r.cwd || '?'));
+    if (r.preview) print('        ' + style.dim('“' + r.preview + '”'));
+  });
+  print('');
+  print('Resume one with:  keyflip resume <number|id>   (add --run to launch it)');
+}
+
+function cmdResume(ctx, rest) {
+  const arg = rest.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+  if (!arg) return fail('usage: keyflip resume <number|session-id> [--run]');
+  let row;
+  if (/^[0-9]{1,3}$/.test(arg)) { row = sessions.list(ctx, { limit: 200 })[parseInt(arg, 10) - 1]; }
+  else { try { row = sessions.find(ctx, arg); } catch (e) { return fail(e.message); } }
+  if (!row) return fail('no such session: ' + arg);
+  const rc = sessions.resumeCommand(row);
+  if (JSON_MODE) { jsonOut({ sessionId: row.sessionId, cwd: rc.cwd, command: rc.command + ' ' + rc.args.join(' ') }); return; }
+  if (rest.indexOf('--run') !== -1) {
+    if (rc.cwd && !fs.existsSync(rc.cwd)) print(style.warn('⚠️  original directory is gone: ' + rc.cwd + ' — launching in the current directory.'));
+    const cwd = (rc.cwd && fs.existsSync(rc.cwd)) ? rc.cwd : process.cwd();
+    const bin = process.env.KEYFLIP_CLAUDE_BIN || 'claude';
+    const r = require('child_process').spawnSync(bin, rc.args, { stdio: 'inherit', cwd: cwd });
+    process.exitCode = typeof r.status === 'number' ? r.status : 1;
+    return;
+  }
+  print('Resume this session with:');
+  print('  cd ' + (rc.cwd || '<dir>') + ' && ' + rc.command + ' ' + rc.args.join(' '));
+  print('(or re-run with --run to launch it now)');
+}
+
 // #6 backup
 function cmdBackup(ctx, rest) {
   const sub = rest[0] || 'now';
@@ -1170,6 +1242,12 @@ async function dispatch(ctx, cmd, rest) {
         return withLock(ctx, function () { return cmdGateway(ctx, rest); }, 'claude-desktop');
       case 'sync':
         return cmdSync(ctx, rest);
+      case 'sessions':
+        return cmdSessions(ctx, rest);
+      case 'resume':
+        return cmdResume(ctx, rest);
+      case 'skill':
+        return cmdSkill(ctx, rest);
       case 'mcp':
         return cmdMcp(ctx, rest);
       case 'install-skill':
