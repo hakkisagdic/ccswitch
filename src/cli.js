@@ -18,13 +18,14 @@ const usagemod = require('./usage');
 const session = require('./session');
 const links = require('./links');
 const autosw = require('./autoswitch');
+const provider = require('./provider');
 const mcp = require('./mcp');
 const style = require('./style').make(process.stdout);
 
 // Serialize every mutation across processes (double-fired alias, launcher app
 // racing a terminal, two menus) so a switch can never interleave with another.
-async function withLock(ctx, fn) {
-  const l = await lock.acquire(ctx.configDir);
+async function withLock(ctx, fn, resource) {
+  const l = await lock.acquire(ctx.configDir, resource ? { resource: resource } : undefined);
   try { return await fn(); } finally { l.release(); }
 }
 
@@ -65,6 +66,11 @@ function usage() {
   print('                                 --restart = no prompt, --force = swap without closing)');
   print('  keyflip next [--strategy best|next-available]');
   print('                                 rotate to the next account — or pick by remaining quota');
+  print('  keyflip provider add <name> --base-url <url> [--key-file <f|->]');
+  print('                                 save a 3rd-party endpoint (relay/gateway/Bedrock/OpenRouter)');
+  print('  keyflip use <name>             route Claude Code to that provider (no restart);');
+  print('                                 keyflip provider off = back to your subscription');
+  print('  keyflip speedtest [name]       time a provider\'s endpoints, pick the fastest');
   print('  keyflip status                which account each surface is on (CLI + desktop app)');
   print('  keyflip list [--usage]        saved accounts; --usage adds 5h/7d quota per account');
   print('  keyflip remove <name|number>  delete a saved account');
@@ -85,6 +91,19 @@ function usage() {
   print('');
   print('Global flags: --json (machine-readable stdout)   --debug (verbose log to stderr + file)');
   print('Tokens stay in the OS credential store; ~/.claude/projects history is account-independent.');
+}
+
+// Read a secret from the TTY without echoing it (prompt on stderr).
+function promptHidden(question) {
+  return new Promise(function (resolve) {
+    const rl = require('readline').createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+    let muted = false;
+    const realWrite = rl._writeToOutput ? rl._writeToOutput.bind(rl) : null;
+    rl._writeToOutput = function (s) { if (muted) { process.stderr.write('*'); } else if (realWrite) { realWrite(s); } };
+    process.stderr.write(question);
+    muted = true;
+    rl.question('', function (a) { muted = false; process.stderr.write('\n'); rl.close(); resolve(a || ''); });
+  });
 }
 
 function confirm(question) {
@@ -362,6 +381,112 @@ function cmdInstallSkill(ctx) {
   print('usage-aware rotation, parallel sessions and the MCP tools).');
 }
 
+// ---- provider profiles (third-party endpoints via settings.json env) --------
+function parseModels(rest) {
+  const models = {};
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '--model' && rest[i + 1] && rest[i + 1].indexOf('=') !== -1) {
+      const kv = rest[i + 1].split('='); models[kv[0]] = kv.slice(1).join('=');
+    }
+  }
+  return models;
+}
+function collectFlagValues(rest, flag) {
+  const out = [];
+  for (let i = 0; i < rest.length; i++) if (rest[i] === flag && rest[i + 1] && rest[i + 1].indexOf('--') !== 0) out.push(rest[i + 1]);
+  return out;
+}
+
+async function cmdProviderAdd(ctx, rest) {
+  const name = rest.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+  const bi = rest.indexOf('--base-url');
+  const baseUrl = bi !== -1 ? rest[bi + 1] : null;
+  if (!name || !baseUrl) return fail('usage: keyflip provider add <name> --base-url <url> [--auth-scheme bearer|api-key] [--model default=… --model haiku=…] [--endpoint <url>]… [--key-file <file|->]');
+  if (!/^https?:\/\//.test(baseUrl)) return fail('--base-url must be an http(s) URL');
+  const asi = rest.indexOf('--auth-scheme');
+  const authScheme = asi !== -1 ? rest[asi + 1] : 'bearer';
+  // The API key is a secret: read it from a file/stdin (never argv, never `ps`).
+  let key = null;
+  const kfi = rest.indexOf('--key-file');
+  if (kfi !== -1 && rest[kfi + 1]) {
+    try { key = (rest[kfi + 1] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(rest[kfi + 1], 'utf8')).trim(); }
+    catch (e) { return fail('could not read --key-file: ' + e.message); }
+  } else if (process.stdin.isTTY) {
+    key = (await promptHidden('API key for ' + name + ' (leave blank for none): ')).trim() || null;
+  }
+  const meta = provider.add(ctx, name, {
+    baseUrl: baseUrl, authScheme: authScheme, key: key,
+    models: parseModels(rest), endpointCandidates: collectFlagValues(rest, '--endpoint'),
+  });
+  logmod.log('provider add ' + name);
+  print(style.ok('✅') + " saved provider '" + name + "' -> " + meta.baseUrl + (key ? '' : '  (no key stored)'));
+  print("Activate it with:  keyflip use " + name + "    (back to your subscription:  keyflip provider off)");
+}
+
+function cmdProviderList(ctx) {
+  const names = provider.list(ctx);
+  const active = provider.readActive(ctx);
+  if (JSON_MODE) {
+    jsonOut({ providers: names.map(function (n) { const m = provider.read(ctx, n); return { name: n, baseUrl: m && m.baseUrl, active: !!(active && active.name === n) }; }), active: active ? active.name : null });
+    return;
+  }
+  print('Providers (' + provider.providersDir(ctx) + '):');
+  if (!names.length) { print('  (none — add one with: keyflip provider add <name> --base-url …)'); }
+  names.forEach(function (n) {
+    const m = provider.read(ctx, n);
+    print(' ' + (active && active.name === n ? '→' : ' ') + ' ' + n + '   ' + (m ? m.baseUrl : '?') +
+      (active && active.name === n ? '   ← active' : ''));
+  });
+  print('');
+  print('Active endpoint: ' + (active ? active.name : 'official (your Anthropic subscription / OAuth login)'));
+}
+
+async function cmdProviderUse(ctx, name) {
+  if (!name) return fail('usage: keyflip use <provider-name>   (or: keyflip provider off)');
+  if (name === 'official' || name === 'off') {
+    provider.useOfficial(ctx);
+    logmod.log('provider -> official');
+    print(style.ok('✅') + ' switched Claude Code back to your Anthropic subscription (OAuth). No restart needed.');
+    jsonOut({ provider: 'official' });
+    return;
+  }
+  if (!provider.exists(ctx, name)) return fail("no such provider: '" + name + "' (see: keyflip provider list)");
+  const r = provider.use(ctx, name);
+  logmod.log('provider -> ' + name);
+  print(style.ok('✅') + ' Claude Code now uses provider: ' + name + '  (' + r.baseUrl + '). No restart needed.');
+  jsonOut({ provider: name, baseUrl: r.baseUrl });
+}
+
+async function cmdProvider(ctx, rest) {
+  const sub = rest[0];
+  const args = rest.slice(1);
+  switch (sub) {
+    case 'add': return withLock(ctx, function () { return cmdProviderAdd(ctx, args); }, 'provider');
+    case 'list': case undefined: return cmdProviderList(ctx);
+    case 'use': return withLock(ctx, function () { return cmdProviderUse(ctx, args[0]); }, 'provider');
+    case 'off': case 'official': return withLock(ctx, function () { return cmdProviderUse(ctx, 'official'); }, 'provider');
+    case 'remove': case 'rm':
+      return withLock(ctx, function () {
+        if (!provider.exists(ctx, args[0])) return fail("no such provider: '" + (args[0] || '') + "'");
+        provider.remove(ctx, args[0]); print('🗑  removed provider: ' + args[0]);
+      }, 'provider');
+    default: return fail("unknown: keyflip provider " + sub + " (use: add | list | use | off | remove)");
+  }
+}
+
+async function cmdSpeedtest(ctx, rest) {
+  const name = rest.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+  const names = name ? [name] : provider.list(ctx);
+  if (!names.length) return fail('no providers to test (add one: keyflip provider add …)');
+  for (let i = 0; i < names.length; i++) {
+    if (!provider.exists(ctx, names[i])) { fail("no such provider: '" + names[i] + "'"); continue; }
+    const r = await provider.speedtest(ctx, names[i]);
+    print(names[i] + ':');
+    r.results.forEach(function (x) { print('   ' + (x.ok ? String(x.ms) + 'ms ' + x.bucket : 'unreachable') + '   ' + x.url); });
+    if (r.chosen) print('   → fastest: ' + r.chosen);
+  }
+}
+
 // Parallel session: run Claude Code as <name> in THIS terminal only.
 async function cmdRun(ctx, rest) {
   const sep = rest.indexOf('--');
@@ -488,13 +613,16 @@ function cmdStatus(ctx) {
   const cliEmail = core.currentEmail(ctx) || null;
   const appName = ctx.appDataDir ? appauth.activeProfileName(ctx) : null;
   const appEmail = appName ? (profiles.email(ctx.configDir, appName) || null) : null;
+  const activeProvider = provider.readActive(ctx);
   jsonOut({
     cli: cliEmail ? { email: cliEmail } : null,
     app: appName ? { name: appName, email: appEmail } : null,
+    provider: activeProvider ? activeProvider.name : null,
   });
   if (!JSON_MODE) {
     print('Claude Code: ' + (cliEmail || 'not logged in') +
       (ctx.appDataDir ? '   ·   Desktop app: ' + (appEmail || appName || 'unknown') : ''));
+    if (activeProvider) print('Endpoint: provider "' + activeProvider.name + '" (overrides the account for API calls)');
   }
 }
 
@@ -813,6 +941,12 @@ async function dispatch(ctx, cmd, rest) {
           logmod.log('removed profile ' + n);
           print('🗑  removed: ' + n);
         });
+      case 'provider':
+        return cmdProvider(ctx, rest);
+      case 'use':
+        return withLock(ctx, function () { return cmdProviderUse(ctx, rest[0]); }, 'provider');
+      case 'speedtest':
+        return cmdSpeedtest(ctx, rest);
       case 'mcp':
         return cmdMcp(ctx, rest);
       case 'install-skill':
