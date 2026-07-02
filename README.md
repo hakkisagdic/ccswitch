@@ -144,21 +144,6 @@ most once a day (never blocks a command).
 - A locked macOS Keychain reads as **"keychain locked"** (not "no credentials"),
   with 5s timeouts; profile storage falls back to files so you can keep working.
 
-### Parallel sessions (`run`)
-
-`keyflip run <name>` launches Claude Code as that account **in the current
-terminal only** — every other terminal, the desktop app and VS Code keep their
-current account, so two accounts can work side by side. Your `~/.claude`
-customizations (settings, keybindings, CLAUDE.md, skills, commands, agents)
-follow you in via symlinks (`--no-share` for a bare profile); conversation
-history stays per-account. Everything after `--` is forwarded to `claude`
-(e.g. `keyflip run work -- --resume`). If the session refreshes the token,
-keyflip saves it back to the profile on exit.
-
-> ⚠️ **Asks for confirmation first** (skip with `-y`): a token refresh inside a
-> parallel session rotates that account's refresh token, which can log out
-> *other live copies of the same account*.
-
 ### Third-party endpoints — providers (`provider`, `use`)
 
 Accounts are your Anthropic **subscriptions** (OAuth). **Providers** point Claude
@@ -262,6 +247,21 @@ how to use all of this (rate-limit playbook, sentinels, parallel sessions):
 ```bash
 keyflip install-skill      # copies it to ~/.claude/skills/keyflip
 ```
+
+### Parallel sessions (`run`)
+
+`keyflip run <name>` launches Claude Code as that account **in the current
+terminal only** — every other terminal, the desktop app and VS Code keep their
+current account, so two accounts can work side by side. Your `~/.claude`
+customizations (settings, keybindings, CLAUDE.md, skills, commands, agents)
+follow you in via symlinks (`--no-share` for a bare profile); conversation
+history stays per-account. Everything after `--` is forwarded to `claude`
+(e.g. `keyflip run work -- --resume`). If the session refreshes the token,
+keyflip saves it back to the profile on exit.
+
+> ⚠️ **Asks for confirmation first** (skip with `-y`): a token refresh inside a
+> parallel session rotates that account's refresh token, which can log out
+> *other live copies of the same account*.
 
 ### Headless import (`add --token`)
 
