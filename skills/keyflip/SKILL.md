@@ -110,7 +110,15 @@ Transcripts live in `~/.claude/projects` and are account-independent.
 keyflip sessions [--search "oauth"] [--here]   # list/search conversations, all accounts
 keyflip resume <number|id>            # print the resume command for its original dir
 keyflip resume <id> --run             # launch `claude --resume <id>` in that dir
+keyflip cowork [--search T]           # browse Claude desktop Cowork sessions (all accounts)
+keyflip chat [get <id>]               # read the active account's claude.ai Chat (EXPERIMENTAL)
 ```
+
+`cowork` and Claude Code `sessions` are LOCAL and reliable. `chat` reads
+claude.ai's cloud history via the desktop app's session cookie — it's
+experimental: it needs a fresh Cloudflare cookie (works right after the app was
+used) and only sees the account the desktop app is signed into; if it 403s, tell
+the user to open the Claude app once and retry.
 
 ## Installing skills & the failover proxy
 

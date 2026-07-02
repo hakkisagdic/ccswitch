@@ -166,11 +166,23 @@ Claude Code transcript'lerin (`~/.claude/projects`) hesaptan bağımsız — key
 hepsini tek yerden tarar ve herhangi birini **kendi dizininde** devam ettirir.
 
 ```bash
-keyflip sessions --search "oauth"     # tüm konuşmaları ara (önizleme, cwd, id)
+keyflip sessions --search "oauth"     # tüm Claude Code konuşmalarını ara
 keyflip sessions --here               # yalnız bu dizinde başlayan oturumlar
 keyflip resume 3                       # listedeki 3. öğenin devam komutunu yazdır
 keyflip resume <id> --run             # `claude --resume <id>`'yi kendi dizininde başlat
+keyflip cowork --search "sınav"       # masaüstü Cowork oturumları (tüm hesaplar)
+keyflip chat                          # aktif hesabın claude.ai Chat'i (deneysel)
+keyflip chat get <id>                 # bir bulut konuşmasını oku
 ```
+
+**Hesaplar arası ne taşınabilir:** Claude Code oturumları ve **Cowork**
+oturumları yerelde hesap-başına saklanır — keyflip ikisini de okur ve geçişte
+birleştirir; her hesap hepsini görür. **claude.ai Chat** ise bulutta;
+`keyflip chat` bunu masaüstü uygulamasının kendi oturum çerezi üzerinden okur —
+**deneyseldir** (belgesiz API), taze bir Cloudflare çerezi gerektirir; uygulama
+yeni kullanıldıysa çalışır, aksi halde 403 dönebilir. Yalnız masaüstünün o an
+girişli olduğu hesabı görür. (Uygulama tercihleri, `design/`, worktree'ler
+global/boş — orada taşınacak hesap-bazlı veri yok.)
 
 ### Skill kur ve failover proxy
 

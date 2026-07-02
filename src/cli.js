@@ -90,6 +90,8 @@ function usage() {
   print('  keyflip sync [push|pull|test] --url <webdav> --passphrase-file <f>   encrypted cross-device sync');
   print('  keyflip sessions [--search T] [--here]   browse Claude Code conversations (all accounts)');
   print('  keyflip resume <n|id> [--run]  resume a past session in its original directory');
+  print('  keyflip cowork [--search T]    browse Claude desktop Cowork sessions (all accounts)');
+  print('  keyflip chat [--limit N | get <id>]   read claude.ai Chat of the active account (experimental)');
   print('  keyflip skill add <owner/repo|./dir|file.tgz>   install a skill; also: skill list|remove');
   print('  keyflip proxy start [--wire] | stop | status | stats');
   print('                                 command-started failover proxy (429/5xx → next account)');
@@ -687,6 +689,57 @@ async function proxyServe(ctx, rest) {
   logmod.log('proxy serving on ' + port);
   await proxy.serve(ctx, { port: port });
   return new Promise(function () { /* run forever until the process is killed */ });
+}
+
+// Cowork sessions (desktop app agent-mode), cross-account, local & read-only.
+function cmdCowork(ctx, rest) {
+  const cowork = require('./cowork');
+  if (!ctx.appDataDir) return fail('the Claude desktop app (macOS) is required for Cowork sessions');
+  const sub = rest[0];
+  if (sub === 'resume') {
+    let row; try { row = cowork.find(ctx, rest[1]); } catch (e) { return fail(e.message); }
+    if (!row) return fail('no such cowork session: ' + (rest[1] || ''));
+    const rc = cowork.resumeCommand(row);
+    if (!rc) return fail('this Cowork session has no underlying Claude Code session to resume');
+    print('Resume it with:  cd ' + (rc.cwd || '<dir>') + ' && ' + rc.command + ' ' + rc.args.join(' '));
+    return;
+  }
+  const rows = cowork.list(ctx, { search: flagVal(rest, '--search'), limit: parseInt(flagVal(rest, '--limit'), 10) || 40, includeArchived: rest.indexOf('--all') !== -1 });
+  if (JSON_MODE) { jsonOut({ cowork: rows.map(function (r) { return { sessionId: r.sessionId, title: r.title, account: r.account, cwd: r.cwd, lastActivityAt: r.lastActivityAt, cliSessionId: r.cliSessionId }; }) }); return; }
+  if (!rows.length) { print('No Cowork sessions found.'); return; }
+  rows.forEach(function (r, i) {
+    print('  [' + (i + 1) + '] ' + (r.title || r.sessionId.slice(0, 8)) + '   ' + style.dim(r.account || '?') + '   ' + String(r.lastActivityAt || '').slice(0, 16).replace('T', ' '));
+    if (r.initialMessage) print('        ' + style.dim('“' + r.initialMessage + '”'));
+  });
+  print('');
+  print('Resume:  keyflip cowork resume <number|id>');
+}
+
+// EXPERIMENTAL: read claude.ai cloud Chat conversations (per active account).
+async function cmdChat(ctx, rest) {
+  const chat = require('./chat');
+  if (!ctx.appDataDir) return fail('reading claude.ai Chat needs the desktop app (its session cookie) — macOS only');
+  const sub = rest[0];
+  try {
+    if (sub === 'get') {
+      if (!rest[1]) return fail('usage: keyflip chat get <conversation-id>');
+      const conv = await chat.get(ctx, rest[1]);
+      if (JSON_MODE) { jsonOut({ conversation: conv }); return; }
+      print(conv.name || '(untitled)');
+      (conv.chat_messages || []).forEach(function (m) {
+        const text = (m.content || []).filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join('');
+        print('  ' + (m.sender === 'human' ? '›' : '‹') + ' ' + text.replace(/\s+/g, ' ').slice(0, 200));
+      });
+      return;
+    }
+    const r = await chat.list(ctx, { limit: parseInt(flagVal(rest, '--limit'), 10) || 30 });
+    if (JSON_MODE) { jsonOut(r); return; }
+    print('claude.ai Chat conversations (active account):');
+    if (!r.conversations.length) { print('  (none — this account has no cloud Chat conversations)'); return; }
+    r.conversations.forEach(function (c) { print('  ' + String(c.updatedAt || '').slice(0, 16).replace('T', ' ') + '  ' + c.name + '   ' + style.dim(c.uuid.slice(0, 8))); });
+    print('');
+    print('Read one:  keyflip chat get <id>');
+  } catch (e) { return fail(e.message); }
 }
 
 // Skills marketplace: install arbitrary skills from GitHub/dir/archive.
@@ -1307,6 +1360,10 @@ async function dispatch(ctx, cmd, rest) {
         return cmdSessions(ctx, rest);
       case 'resume':
         return cmdResume(ctx, rest);
+      case 'cowork':
+        return cmdCowork(ctx, rest);
+      case 'chat':
+        return cmdChat(ctx, rest);
       case 'skill':
         return cmdSkill(ctx, rest);
       case 'proxy':

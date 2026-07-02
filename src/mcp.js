@@ -229,6 +229,27 @@ const TOOLS = [
     },
   },
 
+  {
+    name: 'keyflip_cowork', title: 'Browse Cowork sessions',
+    description: 'List/search Claude desktop Cowork (agent-mode) sessions across ALL accounts — title, first message, account, and the underlying Claude Code session. Read-only, local.',
+    inputSchema: { type: 'object', properties: { search: { type: 'string' }, limit: { type: 'integer' } }, additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) {
+      if (!ctx.appDataDir) return { cowork: [], note: 'desktop app not present (macOS only)' };
+      const rows = require('./cowork').list(ctx, { search: args && args.search, limit: (args && args.limit) || 40 });
+      return { cowork: rows.map(function (r) { return { sessionId: r.sessionId, title: r.title, account: r.account, cwd: r.cwd, lastActivityAt: r.lastActivityAt, cliSessionId: r.cliSessionId }; }) };
+    },
+  },
+  {
+    name: 'keyflip_chat', title: 'Read claude.ai Chat (experimental)',
+    description: 'List the active account\'s claude.ai cloud Chat conversations (or fetch one with id). EXPERIMENTAL: uses the desktop app session cookie against the undocumented claude.ai API; needs a fresh Cloudflare cookie (works right after using the app) and may fail with 403 otherwise. Read-only.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Omit to list; set to fetch one conversation.' }, limit: { type: 'integer' } }, additionalProperties: false }, annotations: RO_NET,
+    run: async function (ctx, args) {
+      if (!ctx.appDataDir) throw new Error('reading claude.ai Chat needs the desktop app (macOS)');
+      const chat = require('./chat');
+      return (args && args.id) ? { conversation: await chat.get(ctx, args.id) } : await chat.list(ctx, { limit: (args && args.limit) || 30 });
+    },
+  },
+
   // ---- diagnostics / usage ----
   {
     name: 'keyflip_doctor', title: 'Diagnose config + connectivity',

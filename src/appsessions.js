@@ -43,21 +43,24 @@ function copyTree(src, dest) {
     fs.copyFileSync(src, dest);
   }
 }
-function pruneBackups(configDir, keep) {
+function pruneBackups(configDir, keep, prefix) {
+  prefix = prefix || BACKUP_PREFIX;
   try {
     const bdir = path.join(configDir, 'backups');
-    const entries = fs.readdirSync(bdir).filter(function (n) { return n.indexOf(BACKUP_PREFIX) === 0; }).sort();
+    const entries = fs.readdirSync(bdir).filter(function (n) { return n.indexOf(prefix) === 0; }).sort();
     for (let i = 0; i < entries.length - keep; i++) {
       fs.rmSync(path.join(bdir, entries[i]), { recursive: true, force: true });
     }
   } catch (e) { /* ignore */ }
 }
 
-function consolidate(ctx) {
+// Merge one account-keyed index store (<appData>/<storeName>/<accountUuid>/<orgUuid>/
+// local_*.json) so every account's folder gains the sessions it is missing.
+function mergeStore(ctx, storeName, backupPrefix) {
   const appDir = ctx.appDataDir;
   if (!appDir) return { ok: false, merged: 0, reason: 'only the macOS desktop app has this store' };
-  const store = path.join(appDir, 'claude-code-sessions');
-  if (!fs.existsSync(store)) return { ok: false, merged: 0, reason: 'no app session store found' };
+  const store = path.join(appDir, storeName);
+  if (!fs.existsSync(store)) return { ok: false, merged: 0, reason: 'no ' + storeName + ' store found' };
 
   // Every <accountUuid>/<orgUuid>/ folder that holds session index files.
   const orgDirs = [];
@@ -95,9 +98,9 @@ function consolidate(ctx) {
   let backup = null;
   try {
     const ts = String(ctx.now()).replace(/[:.]/g, '-');
-    backup = path.join(ctx.configDir, 'backups', BACKUP_PREFIX + ts);
+    backup = path.join(ctx.configDir, 'backups', backupPrefix + ts);
     copyTree(store, backup);
-    pruneBackups(ctx.configDir, BACKUPS_TO_KEEP);
+    pruneBackups(ctx.configDir, BACKUPS_TO_KEEP, backupPrefix);
   } catch (e) { backup = null; }
 
   let merged = 0;
@@ -105,4 +108,14 @@ function consolidate(ctx) {
   return { ok: true, merged: merged, backup: backup, accounts: orgDirs.length };
 }
 
-module.exports = { consolidate: consolidate, pruneBackups: pruneBackups };
+// Consolidate BOTH the Claude Code Recents and the Cowork session indexes so every
+// account sees them all. Returns the combined merge count.
+function consolidate(ctx) {
+  if (!ctx.appDataDir) return { ok: false, merged: 0, reason: 'only the macOS desktop app has this store' };
+  const code = mergeStore(ctx, 'claude-code-sessions', 'claude-code-sessions-');
+  const cowork = mergeStore(ctx, 'local-agent-mode-sessions', 'cowork-sessions-');
+  const merged = (code.merged || 0) + (cowork.merged || 0);
+  return { ok: code.ok || cowork.ok, merged: merged, code: code.merged || 0, cowork: cowork.merged || 0 };
+}
+
+module.exports = { consolidate: consolidate, mergeStore: mergeStore, pruneBackups: pruneBackups };

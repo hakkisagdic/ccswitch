@@ -3,7 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { consolidate, pruneBackups } = require('../src/appsessions');
+const { consolidate, mergeStore, pruneBackups } = require('../src/appsessions');
+// backup behavior is a per-store concern -> test it on mergeStore directly.
+function mergeCode(ctx) { return mergeStore(ctx, 'claude-code-sessions', 'claude-code-sessions-'); }
 const { tmpdir } = require('./helpers');
 
 // Fake Claude desktop app store with two accounts (A active in ~/.claude.json,
@@ -52,17 +54,17 @@ test('consolidate dedupes by cliSessionId (no duplicate pointers)', function () 
 
 test('consolidate backs up the store when it merges', function () {
   const s = setup();
-  const r = consolidate(s.ctx);
+  const r = mergeCode(s.ctx);
   assert.ok(r.backup && fs.existsSync(r.backup), 'backup created');
   assert.ok(fs.existsSync(path.join(r.backup, s.A, s.OA, 'local_1.json')), 'backup has originals');
 });
 
 test('consolidate does not back up when there is nothing to merge', function () {
   const s = setup();
-  consolidate(s.ctx);
+  mergeCode(s.ctx);
   const bdir = path.join(s.ctx.configDir, 'backups');
   const before = fs.existsSync(bdir) ? fs.readdirSync(bdir).length : 0;
-  const r2 = consolidate(s.ctx);
+  const r2 = mergeCode(s.ctx);
   assert.strictEqual(r2.merged, 0);
   assert.strictEqual(r2.backup, null);
   const after = fs.existsSync(bdir) ? fs.readdirSync(bdir).length : 0;

@@ -183,11 +183,23 @@ keyflip can browse and search all of them in one place and resume any one in its
 original directory.
 
 ```bash
-keyflip sessions --search "oauth"     # search all conversations (preview, cwd, id)
+keyflip sessions --search "oauth"     # search all Claude Code conversations (preview, cwd, id)
 keyflip sessions --here               # only sessions started in this directory
 keyflip resume 3                      # print the resume command for list item #3
 keyflip resume <id> --run             # launch `claude --resume <id>` in its dir
+keyflip cowork --search "exam"        # browse Claude desktop Cowork sessions (all accounts)
+keyflip chat                          # list the active account's claude.ai Chat (experimental)
+keyflip chat get <id>                 # read one cloud conversation
 ```
+
+**What can be browsed across accounts:** Claude Code sessions and **Cowork**
+sessions are stored locally per account — keyflip reads and (on switch)
+consolidates both so every account sees them all. **claude.ai Chat** lives in the
+cloud; `keyflip chat` reads it through the desktop app's own session cookie —
+this is **experimental** (undocumented API) and needs a fresh Cloudflare cookie,
+so it works right after using the app and may otherwise return a 403. It only
+sees whichever account the desktop app is currently signed into. (App preferences,
+`design/`, worktrees etc. are global/empty — nothing per-account to migrate there.)
 
 ### Install skills, and the failover proxy
 
