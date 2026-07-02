@@ -112,17 +112,26 @@ async function handleRequest(ctx, reqInfo, clientRes, opts) {
       if (resp.res && resp.res.resume) resp.res.resume(); // drain
       continue;
     }
-    // Commit this response to the client.
-    breaker.recordSuccess(ctx, acct);
+    // Commit this response to the client. A retryable status only reaches here
+    // when there was no other account to fail over to — that is still a FAILURE
+    // for this account's breaker (never a success), otherwise a persistently
+    // rate-limited/expired sole account could never trip open.
+    if (RETRYABLE(resp.status)) breaker.recordFailure(ctx, acct);
+    else breaker.recordSuccess(ctx, acct);
     clientRes.writeHead(resp.status, sanitizeHeaders(resp.headers));
     if (resp.body != null) {                       // buffered (tests / small JSON)
       clientRes.end(resp.body);
       recordCost(ctx, acct, extractUsage(Buffer.isBuffer(resp.body) ? resp.body : Buffer.from(String(resp.body))));
     } else {                                        // stream, teeing for accounting
       const chunks = [];
-      resp.res.on('data', function (c) { if (chunks.length < 4096) chunks.push(c); clientRes.write(c); });
-      resp.res.on('end', function () { clientRes.end(); recordCost(ctx, acct, extractUsage(Buffer.concat(chunks))); });
-      resp.res.on('error', function () { try { clientRes.end(); } catch (e) { /* */ } });
+      const upstream = resp.res;
+      // Honor client backpressure so a slow reader can't make us buffer the whole
+      // upstream stream in memory; tear down the upstream if the client goes away.
+      upstream.on('data', function (c) { if (chunks.length < 4096) chunks.push(c); if (clientRes.write(c) === false) upstream.pause(); });
+      clientRes.on('drain', function () { upstream.resume(); });
+      upstream.on('end', function () { clientRes.end(); recordCost(ctx, acct, extractUsage(Buffer.concat(chunks))); });
+      upstream.on('error', function () { try { clientRes.end(); } catch (e) { /* */ } });
+      clientRes.on('close', function () { try { upstream.destroy(); } catch (e) { /* */ } });
     }
     return { status: resp.status, account: acct };
   }
@@ -140,10 +149,20 @@ function sanitizeHeaders(h) {
 function serve(ctx, opts) {
   opts = opts || {};
   const port = opts.port || DEFAULT_PORT;
+  const MAX_BODY = opts.maxBody || 32 * 1024 * 1024; // cap buffered request body (DoS guard)
   const server = http.createServer(function (req, res) {
-    const bodyChunks = [];
-    req.on('data', function (c) { bodyChunks.push(c); });
+    // Identity marker so `stop` can confirm it's really OUR proxy on this port
+    // (not a PID-reused stranger) before sending a kill signal.
+    if (req.url === '/__keyflip_ping') { res.writeHead(200); res.end('keyflip-proxy ' + process.pid); return; }
+    const bodyChunks = []; let size = 0; let aborted = false;
+    req.on('data', function (c) {
+      if (aborted) return;
+      size += c.length;
+      if (size > MAX_BODY) { aborted = true; try { res.writeHead(413); res.end('request too large'); } catch (e) { /* */ } req.destroy(); return; }
+      bodyChunks.push(c);
+    });
     req.on('end', function () {
+      if (aborted) return;
       const reqInfo = { method: req.method, path: req.url, headers: req.headers, body: Buffer.concat(bodyChunks) };
       handleRequest(ctx, reqInfo, res, opts).catch(function () { try { res.writeHead(500); res.end('proxy error'); } catch (e) { /* */ } });
     });
@@ -166,8 +185,66 @@ function stats(ctx) {
   return { total: lines.length, byAccount: byAccount };
 }
 
+function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === 'EPERM'; } }
+
+// Is THIS proxy still the one listening on its recorded port? Guards against PID
+// reuse: a bare pidAlive() could match an unrelated process that inherited the
+// number after our child died. We probe the recorded port for our health marker.
+function verifyAlive(meta, cb) {
+  if (!meta || !meta.pid || !pidAlive(meta.pid)) return cb(false);
+  const req = http.request({ hostname: '127.0.0.1', port: meta.port, path: '/__keyflip_ping', method: 'GET', timeout: 800 }, function (res) {
+    let d = ''; res.on('data', function (c) { d += c; }); res.on('end', function () { cb(d.indexOf('keyflip-proxy') !== -1); });
+  });
+  req.on('error', function () { cb(false); });
+  req.on('timeout', function () { req.destroy(); cb(false); });
+  req.end();
+}
+function isRunning(ctx) { const m = readMeta(ctx); return !!(m && m.pid && pidAlive(m.pid)); }
+
+// Set/clear ANTHROPIC_BASE_URL in settings.json (safe: throws on corrupt).
+function wireSettings(ctx, url) {
+  const settings = require('./settings');
+  const { writeJsonStable } = require('./fsutil');
+  const cfg = settings.read(ctx.claudeSettingsPath);
+  cfg.env = cfg.env || {};
+  if (url) cfg.env.ANTHROPIC_BASE_URL = url; else delete cfg.env.ANTHROPIC_BASE_URL;
+  if (!Object.keys(cfg.env).length) delete cfg.env;
+  writeJsonStable(ctx.claudeSettingsPath, cfg, 0o600);
+}
+
+// Spawn the detached background server and record it. Shared by the CLI and MCP.
+function start(ctx, opts) {
+  opts = opts || {};
+  if (isRunning(ctx)) { const m = readMeta(ctx); return { already: true, pid: m.pid, port: m.port, url: m.url }; }
+  const port = opts.port || DEFAULT_PORT;
+  const bin = path.join(__dirname, '..', 'bin', 'keyflip.js');
+  const child = require('child_process').spawn(process.execPath, [bin, '__proxy-serve', '--port', String(port)], { detached: true, stdio: 'ignore' });
+  child.unref();
+  const url = 'http://127.0.0.1:' + port;
+  require('./fsutil').writeJsonStable(metaPath(ctx), { pid: child.pid, port: port, url: url, wired: !!opts.wire, at: ctx.now() }, 0o600);
+  let wireError = null;
+  if (opts.wire) { try { wireSettings(ctx, url); } catch (e) { wireError = e.message; } }
+  return { pid: child.pid, port: port, url: url, wired: !!opts.wire, wireError: wireError };
+}
+
+// Async: verifies the process identity (port ping) before killing, so a
+// PID-reused stranger is never signalled. Stale meta is cleaned up regardless.
+function stop(ctx) {
+  return new Promise(function (resolve) {
+    const meta = readMeta(ctx);
+    if (!meta) return resolve({ running: false });
+    verifyAlive(meta, function (ours) {
+      if (ours && meta.pid) { try { process.kill(meta.pid); } catch (e) { /* */ } }
+      if (meta.wired) { try { wireSettings(ctx, null); } catch (e) { /* */ } }
+      try { fs.rmSync(metaPath(ctx), { force: true }); } catch (e) { /* */ }
+      resolve({ stopped: true, wired: !!meta.wired });
+    });
+  });
+}
+
 module.exports = {
   serve: serve, handleRequest: handleRequest, candidates: candidates, upstreamFor: upstreamFor,
   extractUsage: extractUsage, stats: stats, metaPath: metaPath, readMeta: readMeta, costFile: costFile,
+  start: start, stop: stop, isRunning: isRunning, wireSettings: wireSettings, pidAlive: pidAlive,
   DEFAULT_PORT: DEFAULT_PORT, RETRYABLE: RETRYABLE,
 };

@@ -160,6 +160,34 @@ keyflip doctor                  # config + giriş + endpoint erişilebilirliği
 - `keyflip gateway use <provider>` aynısını Claude **masaüstü uygulaması** için
   yapar (uygulamayı yeniden başlat).
 
+### Geçmiş konuşmaları bul & devam ettir (`sessions`, `resume`)
+
+Claude Code transcript'lerin (`~/.claude/projects`) hesaptan bağımsız — keyflip
+hepsini tek yerden tarar ve herhangi birini **kendi dizininde** devam ettirir.
+
+```bash
+keyflip sessions --search "oauth"     # tüm konuşmaları ara (önizleme, cwd, id)
+keyflip sessions --here               # yalnız bu dizinde başlayan oturumlar
+keyflip resume 3                       # listedeki 3. öğenin devam komutunu yazdır
+keyflip resume <id> --run             # `claude --resume <id>`'yi kendi dizininde başlat
+```
+
+### Skill kur ve failover proxy
+
+```bash
+keyflip skill add anthropics/skills   # GitHub / ./dizin / file.tgz'den skill kur
+keyflip skill list | keyflip skill remove <ad>   # yalnız keyflip'in kurduklarına dokunur
+
+keyflip proxy start --wire            # yerel failover proxy başlat + Claude'u ona bağla
+keyflip proxy status | keyflip proxy stats
+keyflip proxy stop                    # durdur (ve bağlantıyı kaldır)
+```
+
+**Proxy komutla başlatılır** (asla her zaman-açık daemon değil): çalışırken her
+API isteğini aktif hesaba yönlendirir ve istemciye bir bayt gitmeden önce
+`429`/`5xx` olursa **sıradaki sağlıklı hesaba geçip yeniden dener** — kota-eşikli
+`autoswitch`'in veremeyeceği istek-seviyesi failover. Yalnız `127.0.0.1` dinler.
+
 ### Kullanıma göre otomatik geçiş (`autoswitch`)
 
 `keyflip autoswitch --threshold 90 --interval 60 --strategy next-available`
@@ -178,11 +206,16 @@ Agent'lar CLI'ı tahmin etmek zorunda kalmasın — keyflip **MCP** konuşur:
 claude mcp add keyflip -- keyflip mcp     # veya: keyflip mcp --setup
 ```
 
-Araçlar: `keyflip_status`, `keyflip_list` (`include_usage` ile),
-`keyflip_switch`, `keyflip_next` — düzgün JSON Şemaları, salt-okunur/yıkıcı
-anotasyonları; **değiştiren araçlar `confirm: true` ister** ve açıklamaları
-agent'a önce kullanıcıya sormasını söyler. MCP üzerinden geçiş her zaman
-yerinde yapılır (uygulamayı kullanıcının altından asla kapatmaz).
+**Tüm CLI yüzeyi ~20 MCP aracı olarak sunulur** — agent hiçbir şeyi kabuğa
+dökmeden yapabilir: hesaplar (`keyflip_status/list/switch/next`), provider'lar
+(`keyflip_providers`, `keyflip_provider_use/add`, `keyflip_test_provider`),
+oturumlar (`keyflip_sessions`, `keyflip_resume_command`), tanılama
+(`keyflip_doctor`, `keyflip_usage_history`), yedekler, skill'ler
+(`keyflip_skills`, `keyflip_skill_add/remove`) ve failover proxy
+(`keyflip_proxy_status/control`). Her aracın düzgün JSON Şeması ve
+salt-okunur/yıkıcı anotasyonu var; **değiştiren araçlar `confirm: true` ister**
+ve açıklamaları agent'a önce kullanıcıya sormasını söyler. Sırlar MCP üzerinden
+asla alınmaz — ör. provider anahtarı ekleme CLI'daki `--key-file`'a bırakılır.
 
 Agent'a tüm bunları ne zaman ve nasıl kullanacağını öğreten paketli bir
 **Claude Code skill'i** de var (rate-limit playbook'u, durum kodları, paralel

@@ -72,8 +72,21 @@ test('MCP lifecycle: initialize negotiates a supported protocol version and decl
   assert.strictEqual(got[1].result.protocolVersion, '2025-06-18');
   assert.strictEqual(got[1].result.serverInfo.name, 'keyflip');
   assert.ok(got[1].result.capabilities.tools);
-  const names = got[2].result.tools.map(function (t) { return t.name; }).sort();
-  assert.deepStrictEqual(names, ['keyflip_list', 'keyflip_next', 'keyflip_status', 'keyflip_switch']);
+  const names = got[2].result.tools.map(function (t) { return t.name; });
+  // Full surface exposed (accounts + providers + sessions + diagnostics + backup + skills + proxy)
+  ['keyflip_status', 'keyflip_list', 'keyflip_switch', 'keyflip_next', 'keyflip_providers',
+   'keyflip_provider_use', 'keyflip_sessions', 'keyflip_resume_command', 'keyflip_doctor',
+   'keyflip_usage_history', 'keyflip_backups', 'keyflip_backup_create', 'keyflip_skills',
+   'keyflip_skill_add', 'keyflip_proxy_status', 'keyflip_proxy_control'].forEach(function (n) {
+    assert.ok(names.indexOf(n) !== -1, 'missing MCP tool: ' + n);
+  });
+  assert.ok(names.length >= 18, 'expected the full tool surface, got ' + names.length);
+  // every mutating tool must gate on confirm
+  got[2].result.tools.forEach(function (t) {
+    if (t.annotations && t.annotations.readOnlyHint === false) {
+      assert.ok(t.inputSchema.required && t.inputSchema.required.indexOf('confirm') !== -1, t.name + ' must require confirm');
+    }
+  });
   const sw = got[2].result.tools.filter(function (t) { return t.name === 'keyflip_switch'; })[0];
   assert.strictEqual(sw.annotations.destructiveHint, true);
   assert.ok(sw.inputSchema.required.indexOf('confirm') !== -1);
@@ -104,6 +117,24 @@ test('MCP tools: status/list read state; switch requires confirm and then switch
   const accounts = got[5].result.structuredContent.accounts;
   const alice = accounts.filter(function (a) { return a.name === 'alice'; })[0];
   assert.strictEqual(alice.activeCli, true);                             // switch took effect
+});
+
+test('MCP new tools work: providers (read) + provider_use requires confirm', async function () {
+  const home = mkhome();
+  cliRun(home, ['add']); // an account so ctx is valid
+  cliRun(home, ['provider', 'add', 'relay', '--base-url', 'https://relay/v1', '--key-file', '-'], 'k\n');
+  const got = await mcpSession(home, [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'keyflip_providers', arguments: {} } },
+    { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'keyflip_provider_use', arguments: { name: 'relay', confirm: false } } },
+    { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'keyflip_provider_use', arguments: { name: 'relay', confirm: true } } },
+    { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'keyflip_sessions', arguments: { limit: 1 } } },
+  ], [1, 2, 3, 4, 5]);
+  assert.ok(got[2].result.structuredContent.providers.some(function (p) { return p.name === 'relay'; }));
+  assert.strictEqual(got[3].result.isError, true);                       // confirm=false refused
+  assert.strictEqual(got[4].result.structuredContent.provider, 'relay'); // switched
+  assert.ok(Array.isArray(got[5].result.structuredContent.sessions));    // read-only tool works
 });
 
 test('MCP: unknown method -> -32601, unknown tool -> -32602, parse error -> -32700', async function () {

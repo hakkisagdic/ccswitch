@@ -16,6 +16,21 @@ const appauth = require('./appauth');
 const usage = require('./usage');
 const lock = require('./lock');
 const logmod = require('./log');
+const provider = require('./provider');
+const sessions = require('./sessions');
+const doctor = require('./doctor');
+const backup = require('./backup');
+const history = require('./history');
+const proxy = require('./proxy');
+
+// Mutating tools all gate on confirm:true — the agent must ask the user first.
+function needConfirm(args) {
+  if (!args || args.confirm !== true) throw new Error('confirmation required: ask the user first, then call again with confirm=true');
+}
+const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const RO_NET = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
+const MUT = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
+const confirmProp = { confirm: { type: 'boolean', description: 'Must be true — set it only after the user has agreed.' } };
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SUPPORTED_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -153,6 +168,140 @@ const TOOLS = [
         logmod.log('mcp next -> ' + target.name);
         return { switched: { name: target.name, email: target.email || null }, cliSwitched: did.cli };
       } finally { l.release(); }
+    },
+  },
+
+  // ---- providers (third-party endpoints) ----
+  {
+    name: 'keyflip_providers', title: 'List provider endpoints',
+    description: 'Saved third-party API endpoints (relays/gateways/Bedrock/OpenRouter) and which one Claude Code is currently routed through. Read-only; never returns keys.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) {
+      const active = provider.readActive(ctx);
+      return { providers: provider.list(ctx).map(function (n) { const m = provider.read(ctx, n); return { name: n, baseUrl: m && m.baseUrl, active: !!(active && active.name === n) }; }), active: active ? active.name : 'official' };
+    },
+  },
+  {
+    name: 'keyflip_provider_use', title: 'Route Claude Code to a provider',
+    description: 'Point Claude Code at a saved provider endpoint (or "official" to return to the Anthropic subscription) by patching settings.json env — Claude hot-reloads, no restart. Ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Provider name, or "official".' }, confirm: confirmProp.confirm }, required: ['name', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      if (args.name === 'official' || args.name === 'off') { provider.useOfficial(ctx); return { provider: 'official' }; }
+      if (!provider.exists(ctx, args.name)) throw new Error("no such provider: '" + args.name + "'");
+      const r = provider.use(ctx, args.name); return { provider: args.name, baseUrl: r.baseUrl };
+    },
+  },
+  {
+    name: 'keyflip_provider_add', title: 'Save a provider endpoint',
+    description: 'Save a third-party endpoint. NOTE: the API key is a secret and must NOT be passed through MCP — omit it here and tell the user to run `keyflip provider add <name> --base-url <url> --key-file -` (key on stdin). This tool stores only the non-secret metadata. Ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, base_url: { type: 'string' }, auth_scheme: { type: 'string', enum: ['bearer', 'api-key'] }, confirm: confirmProp.confirm }, required: ['name', 'base_url', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      provider.add(ctx, args.name, { baseUrl: args.base_url, authScheme: args.auth_scheme || 'bearer' });
+      return { saved: args.name, note: 'No key stored. Run `keyflip provider add ' + args.name + ' --base-url ' + args.base_url + ' --key-file -` to add the key securely.' };
+    },
+  },
+  {
+    name: 'keyflip_test_provider', title: 'Test a provider endpoint',
+    description: 'Fire one minimal real request to a provider to check auth + reachability. Read-only (no state change).',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'], additionalProperties: false }, annotations: RO_NET,
+    run: async function (ctx, args) { return { name: args.name, result: await doctor.testProvider(ctx, args.name) }; },
+  },
+
+  // ---- sessions ----
+  {
+    name: 'keyflip_sessions', title: 'Browse Claude Code conversations',
+    description: 'List/search past Claude Code conversations across ALL accounts (transcripts in ~/.claude/projects). Read-only.',
+    inputSchema: { type: 'object', properties: { search: { type: 'string' }, cwd: { type: 'string', description: 'Only sessions started in this directory.' }, limit: { type: 'integer' } }, additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) {
+      const rows = sessions.list(ctx, { search: args && args.search, cwd: args && args.cwd, limit: (args && args.limit) || 40 });
+      return { sessions: rows.map(function (r) { return { sessionId: r.sessionId, cwd: r.cwd, mtime: r.mtime, preview: r.preview }; }) };
+    },
+  },
+  {
+    name: 'keyflip_resume_command', title: 'Get a session resume command',
+    description: 'Return the exact command to resume a past conversation in its original directory (does NOT run it). Read-only.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Session id or unique prefix.' } }, required: ['id'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) {
+      const row = sessions.find(ctx, String(args.id)); if (!row) throw new Error('no such session: ' + args.id);
+      const rc = sessions.resumeCommand(row); return { cwd: rc.cwd, command: rc.command + ' ' + rc.args.join(' ') };
+    },
+  },
+
+  // ---- diagnostics / usage ----
+  {
+    name: 'keyflip_doctor', title: 'Diagnose config + connectivity',
+    description: 'Health report: Claude config dir, login present, desktop app data, and each provider endpoint reachability. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO_NET,
+    run: async function (ctx) { return await doctor.diagnose(ctx); },
+  },
+  {
+    name: 'keyflip_usage_history', title: 'Usage trend + failover events',
+    description: 'Recent per-account 5h/7d usage samples and autoswitch/failover events. Read-only.',
+    inputSchema: { type: 'object', properties: { limit: { type: 'integer' } }, additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { const n = (args && args.limit) || 50; return { usage: history.readUsage(ctx, n), events: history.readEvents(ctx, n) }; },
+  },
+
+  // ---- backup ----
+  {
+    name: 'keyflip_backups', title: 'List backups',
+    description: 'List keyflip metadata backups (newest first). Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return { backups: backup.list(ctx).map(function (b) { return { name: b.name, sizeBytes: b.sizeBytes, mtime: b.mtime }; }) }; },
+  },
+  {
+    name: 'keyflip_backup_create', title: 'Create a backup',
+    description: 'Snapshot keyflip metadata (no secrets). Ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: confirmProp, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const r = backup.create(ctx); return { created: r.name, files: r.files }; },
+  },
+  {
+    name: 'keyflip_backup_restore', title: 'Restore a backup',
+    description: 'Restore a backup by name or 1-based index (takes a pre-restore safety backup first). Ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { which: { type: 'string' }, confirm: confirmProp.confirm }, required: ['which', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); return backup.restore(ctx, args.which); },
+  },
+
+  // ---- skills marketplace ----
+  {
+    name: 'keyflip_skills', title: 'List installed skills',
+    description: 'Skills keyflip installed into ~/.claude/skills. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return { skills: require('./skillstore').list(ctx) }; },
+  },
+  {
+    name: 'keyflip_skill_add', title: 'Install a skill',
+    description: 'Install a skill from a GitHub repo (owner/repo[@ref][/subdir]), a local directory, or a .tar.gz/.zip. Installs code the agent will run — ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { source: { type: 'string' }, confirm: confirmProp.confirm }, required: ['source', 'confirm'], additionalProperties: false }, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    run: async function (ctx, args) { needConfirm(args); return { installed: await require('./skillstore').add(ctx, String(args.source), {}) }; },
+  },
+  {
+    name: 'keyflip_skill_remove', title: 'Remove an installed skill',
+    description: 'Remove a keyflip-installed skill (never the user\'s own). Ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, confirm: confirmProp.confirm }, required: ['name', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); require('./skillstore').remove(ctx, args.name); return { removed: args.name }; },
+  },
+
+  // ---- failover proxy ----
+  {
+    name: 'keyflip_proxy_status', title: 'Failover proxy status',
+    description: 'Is the local failover proxy running? On what port, wired? Per-account request/token totals. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) {
+      const meta = proxy.readMeta(ctx);
+      const running = !!(meta && meta.pid && (function () { try { process.kill(meta.pid, 0); return true; } catch (e) { return e && e.code === 'EPERM'; } })());
+      return { running: running, port: meta && meta.port, wired: !!(meta && meta.wired), stats: proxy.stats(ctx) };
+    },
+  },
+  {
+    name: 'keyflip_proxy_control', title: 'Start/stop the failover proxy',
+    description: 'Start or stop the command-activated localhost failover proxy (routes each request to the active account, fails over on 429/5xx). action="start"|"stop"; wire=true also sets ANTHROPIC_BASE_URL. Starting spawns a background process — ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['start', 'stop'] }, wire: { type: 'boolean' }, port: { type: 'integer' }, confirm: confirmProp.confirm }, required: ['action', 'confirm'], additionalProperties: false }, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    run: async function (ctx, args) {
+      needConfirm(args);
+      if (args.action === 'start') { const r = proxy.start(ctx, { wire: !!args.wire, port: args.port }); return { started: !r.already, url: r.url, wired: r.wired, port: r.port }; }
+      return proxy.stop(ctx);
     },
   },
 ];

@@ -80,6 +80,27 @@ test('all-accounts-failing yields 502', async function () {
   assert.ok(r.status === 500 || r.status === 502);
 });
 
+test('a retryable status committed as a last resort records a FAILURE, not a success', async function () {
+  const ctx = twoAccounts();
+  // both accounts 429 -> the last one is committed; that must count as a failure
+  const forward = async function () { return { status: 429, headers: {}, body: Buffer.from('busy') }; };
+  const res = fakeRes();
+  await proxy.handleRequest(ctx, { method: 'POST', path: '/v1/messages', headers: {}, body: Buffer.from('{}') }, res, { forward: forward });
+  const all = breaker.readAll(ctx);
+  // both accounts should have recorded failures (never a phantom success)
+  assert.ok((all.a || {}).failures >= 1);
+  assert.ok((all.b || {}).failures >= 1);
+});
+
+test('a persistently-429 single account eventually trips its breaker open', async function () {
+  const ctx = makeCtx();
+  writeClaude(ctx, { oauthAccount: { emailAddress: 'solo@x.com' }, userID: 'u' });
+  ctx.store.setLive('{"claudeAiOauth":{"accessToken":"T"}}'); core.addCurrent(ctx);
+  const forward = async function () { return { status: 429, headers: {}, body: Buffer.from('busy') }; };
+  for (let i = 0; i < 4; i++) await proxy.handleRequest(ctx, { method: 'POST', path: '/v1/messages', headers: {}, body: Buffer.from('{}') }, fakeRes(), { forward: forward });
+  assert.strictEqual(breaker.state(ctx, 'solo'), 'open'); // no longer force-closed by its own 429s
+});
+
 test('extractUsage parses both plain JSON and SSE output_tokens', function () {
   const j = proxy.extractUsage(Buffer.from('{"usage":{"input_tokens":3,"output_tokens":9}}'));
   assert.strictEqual(j.inputTokens, 3); assert.strictEqual(j.outputTokens, 9);

@@ -47,6 +47,10 @@ function list(ctx, opts) {
     try { files = fs.readdirSync(dir); } catch (e) { return; }
     files.forEach(function (f) {
       if (f.slice(-6) !== '.jsonl') return;
+      const id = f.slice(0, -6);
+      // Must start alphanumeric (a leading '-' would smuggle a flag into
+      // `claude --resume <id>`) and contain only safe id chars.
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) return;
       const file = path.join(dir, f);
       let st; try { st = fs.statSync(file); } catch (e) { return; }
       rows.push({ sessionId: f.slice(0, -6), file: file, project: pd, mtimeMs: st.mtimeMs, mtime: st.mtime.toISOString(), sizeBytes: st.size });
@@ -81,10 +85,14 @@ function matchesSearch(row, term) {
   if ((row.preview || '').toLowerCase().indexOf(t) !== -1) return true;
   if ((row.cwd || '').toLowerCase().indexOf(t) !== -1) return true;
   if (row.sessionId.toLowerCase().indexOf(t) !== -1) return true;
-  // deeper: scan the file content (bounded)
+  // deeper: scan the file content, but bounded — read at most the first 1 MB so a
+  // huge/hostile transcript can't exhaust memory.
   try {
-    const txt = fs.readFileSync(row.file, 'utf8');
-    return txt.toLowerCase().indexOf(t) !== -1;
+    const fd = fs.openSync(row.file, 'r');
+    const buf = Buffer.alloc(1024 * 1024);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    return buf.slice(0, n).toString('utf8').toLowerCase().indexOf(t) !== -1;
   } catch (e) { return false; }
 }
 

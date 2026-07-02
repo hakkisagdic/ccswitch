@@ -102,6 +102,33 @@ account; `keyflip provider off` restores it. Never put an API key in argv — us
 - `keyflip gateway use <provider>` — route the Claude **desktop app** through a
   provider gateway (restart the app to apply).
 
+## Finding & resuming past conversations
+
+Transcripts live in `~/.claude/projects` and are account-independent.
+
+```bash
+keyflip sessions [--search "oauth"] [--here]   # list/search conversations, all accounts
+keyflip resume <number|id>            # print the resume command for its original dir
+keyflip resume <id> --run             # launch `claude --resume <id>` in that dir
+```
+
+## Installing skills & the failover proxy
+
+```bash
+keyflip skill add owner/repo          # install any skill from GitHub (or ./dir, or file.tgz)
+keyflip skill list | remove <name>    # only removes skills keyflip installed
+
+keyflip proxy start --wire            # command-started localhost proxy; wires Claude Code to it
+keyflip proxy status | stats          # is it up? per-account request/token totals
+keyflip proxy stop                    # stops it and unwires
+```
+
+The proxy is **explicitly started/stopped** (never an always-on daemon). While up,
+it routes every request to the active account and **fails over to the next healthy
+account on 429/5xx** before the client sees a byte — request-level failover that
+`autoswitch` (usage-poll based) can't give. Suggest it for long unattended runs
+where mid-request rate-limits are likely.
+
 ## Parallel accounts in one terminal
 
 ```bash

@@ -66,3 +66,14 @@ test('resumeCommand builds `claude --resume <id>` in the original cwd', function
   const rc = sessions.resumeCommand(sessions.find(ctx, 'sess-1'));
   assert.deepStrictEqual(rc, { cwd: '/my/dir', command: 'claude', args: ['--resume', 'sess-1'] });
 });
+
+test('filenames that are not real session ids are ignored (argv-injection guard)', function () {
+  const ctx = makeCtx();
+  const dir = path.join(ctx.home, '.claude', 'projects', '-p');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '--inject.jsonl'), JSON.stringify({ type: 'user', cwd: '/x', message: { role: 'user', content: [{ type: 'text', text: 'a' }] } }) + '\n');
+  fs.writeFileSync(path.join(dir, 'good-1234-uuid.jsonl'), JSON.stringify({ type: 'user', cwd: '/x', message: { role: 'user', content: [{ type: 'text', text: 'b' }] } }) + '\n');
+  const ids = sessions.list(ctx, {}).map(function (r) { return r.sessionId; });
+  assert.ok(ids.indexOf('good-1234-uuid') !== -1);
+  assert.strictEqual(ids.indexOf('--inject'), -1); // dangerous name skipped
+});

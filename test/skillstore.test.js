@@ -80,3 +80,14 @@ test('add from a GitHub tarball (mocked fetch) installs the skill', async functi
   assert.ok(r.some(function (s) { return s.name === 'fromgh'; }));
   assert.ok(fs.existsSync(path.join(ctx.home, '.claude', 'skills', 'fromgh', 'SKILL.md')));
 });
+
+test('a GitHub subdir with ../ is rejected (path traversal)', async function () {
+  const ctx = makeCtx();
+  const staging = fs.mkdtempSync(path.join(require('os').tmpdir(), 'kf-trav-'));
+  const inner = path.join(staging, 'repo-main'); fs.mkdirSync(inner, { recursive: true });
+  const tgz = path.join(staging, 'r.tar.gz');
+  require('child_process').execFileSync('tar', ['-czf', tgz, '-C', staging, 'repo-main']);
+  const bytes = fs.readFileSync(tgz);
+  const fetchMock = async function () { return { ok: true, status: 200, arrayBuffer: async function () { return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength); } }; };
+  await assert.rejects(function () { return skillstore.add(ctx, 'owner/repo/../../../../etc', { fetch: fetchMock }); }, /traversal/);
+});

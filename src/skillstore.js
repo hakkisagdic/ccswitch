@@ -26,6 +26,8 @@ function findSkillDirs(root, depth) {
     let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
     if (entries.some(function (e) { return e.isFile() && e.name === 'SKILL.md'; })) { found.push(dir); return; } // a skill dir isn't nested
     if (d <= 0) return;
+    // isDirectory() is false for symlinks (Dirent), so a symlinked dir is never
+    // followed — blocks symlink-loop recursion and symlink-to-/etc escapes.
     entries.forEach(function (e) { if (e.isDirectory() && e.name[0] !== '.') walk(path.join(dir, e.name), d - 1); });
   }
   walk(root, depth);
@@ -102,14 +104,24 @@ async function resolveSource(src, opts) {
     const res = await doFetch(url);
     if (!res || !res.ok) throw new Error('GitHub download failed (http ' + (res && res.status) + ') for ' + gh.owner + '/' + gh.repo);
     const buf = Buffer.from(await res.arrayBuffer());
-    const tmpFile = path.join(os.tmpdir(), 'keyflip-gh-' + process.pid + '.tar.gz');
+    // Unpredictable temp dir (avoids a symlink-predates-write overwrite on shared hosts).
+    const dlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-gh-'));
+    const tmpFile = path.join(dlDir, 'repo.tar.gz');
     fs.writeFileSync(tmpFile, buf);
     const dir = extractArchive(tmpFile);
-    try { fs.rmSync(tmpFile, { force: true }); } catch (e) { /* */ }
+    try { fs.rmSync(dlDir, { recursive: true, force: true }); } catch (e) { /* */ }
     // codeload wraps everything in <repo>-<ref>/; descend into it (+ subdir)
     let inner = dir;
     try { const only = fs.readdirSync(dir).filter(function (n) { return fs.statSync(path.join(dir, n)).isDirectory(); }); if (only.length === 1) inner = path.join(dir, only[0]); } catch (e) { /* */ }
-    if (gh.subdir) inner = path.join(inner, gh.subdir);
+    if (gh.subdir) {
+      const wrapRoot = inner;
+      inner = path.resolve(wrapRoot, gh.subdir);
+      // The subdir must stay INSIDE the extracted repo — reject ../ escapes.
+      if (inner !== wrapRoot && inner.indexOf(wrapRoot + path.sep) !== 0) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* */ }
+        throw new Error('invalid subdir in ' + src + ' (path traversal)');
+      }
+    }
     return { root: inner, cleanup: dir, source: 'github:' + gh.owner + '/' + gh.repo + (gh.subdir ? '/' + gh.subdir : '') };
   }
   throw new Error("don't know how to install '" + src + "' — use owner/repo, a local dir, or a .tar.gz/.zip");

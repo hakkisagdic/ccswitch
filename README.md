@@ -176,6 +176,36 @@ keyflip doctor                  # config + login + endpoint reachability
 - `keyflip gateway use <provider>` does the same for the Claude **desktop app**
   (restart the app to apply); `keyflip gateway off` restores it.
 
+### Find & resume past conversations (`sessions`, `resume`)
+
+Your Claude Code transcripts (`~/.claude/projects`) are account-independent, so
+keyflip can browse and search all of them in one place and resume any one in its
+original directory.
+
+```bash
+keyflip sessions --search "oauth"     # search all conversations (preview, cwd, id)
+keyflip sessions --here               # only sessions started in this directory
+keyflip resume 3                      # print the resume command for list item #3
+keyflip resume <id> --run             # launch `claude --resume <id>` in its dir
+```
+
+### Install skills, and the failover proxy
+
+```bash
+keyflip skill add anthropics/skills   # install any skill from GitHub / ./dir / file.tgz
+keyflip skill list | keyflip skill remove <name>   # only touches keyflip-installed skills
+
+keyflip proxy start --wire            # start a localhost failover proxy + wire Claude to it
+keyflip proxy status | keyflip proxy stats
+keyflip proxy stop                    # stop it (and unwire)
+```
+
+The **proxy** is command-started (never an always-on daemon): while running it
+routes each API request to your active account and, on a `429`/`5xx` before any
+byte reaches the client, **fails over to the next healthy account and retries** —
+request-level failover beyond what usage-threshold `autoswitch` can do. It binds
+`127.0.0.1` only.
+
 ### Auto-switch on usage (`autoswitch`)
 
 `keyflip autoswitch --threshold 90 --interval 60 --strategy next-available`
@@ -194,11 +224,16 @@ Agents shouldn't have to guess the CLI — keyflip speaks **MCP**:
 claude mcp add keyflip -- keyflip mcp     # or see: keyflip mcp --setup
 ```
 
-Tools: `keyflip_status`, `keyflip_list` (with `include_usage`),
-`keyflip_switch`, `keyflip_next` — proper JSON Schemas, read-only/destructive
-annotations, and **mutating tools require `confirm: true`**, with descriptions
-instructing the agent to ask the user first. Switching via MCP is always
-in-place (never closes the app under the user).
+**The full CLI surface is exposed as ~20 MCP tools**, so an agent can do
+everything without shelling out — accounts (`keyflip_status/list/switch/next`),
+providers (`keyflip_providers`, `keyflip_provider_use/add`, `keyflip_test_provider`),
+sessions (`keyflip_sessions`, `keyflip_resume_command`), diagnostics
+(`keyflip_doctor`, `keyflip_usage_history`), backups, skills (`keyflip_skills`,
+`keyflip_skill_add/remove`), and the failover proxy (`keyflip_proxy_status`,
+`keyflip_proxy_control`). Every tool has a proper JSON Schema and read-only/
+destructive annotations; **mutating tools require `confirm: true`** and their
+descriptions tell the agent to ask the user first. Secrets are never accepted
+through MCP — e.g. adding a provider key is deferred to `--key-file` on the CLI.
 
 There's also a bundled **Claude Code skill** that teaches the agent when and
 how to use all of this (rate-limit playbook, sentinels, parallel sessions):

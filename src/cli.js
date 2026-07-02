@@ -397,7 +397,10 @@ async function cmdMcp(ctx, rest) {
     print('  Or in .mcp.json / mcp.json:');
     print(JSON.stringify({ mcpServers: { keyflip: { command: 'keyflip', args: ['mcp'] } } }, null, 2));
     print('');
-    print('Tools: keyflip_status, keyflip_list (include_usage), keyflip_switch, keyflip_next.');
+    print('20 tools cover the full surface — accounts (status/list/switch/next), providers');
+    print('(providers/provider_use/provider_add/test_provider), sessions (sessions/resume_command),');
+    print('diagnostics (doctor/usage_history), backup, skills (skills/skill_add/skill_remove), and');
+    print('the failover proxy (proxy_status/proxy_control).');
     print('Mutating tools require confirm=true — the agent is instructed to ask the user first.');
     return;
   }
@@ -634,44 +637,28 @@ async function cmdSync(ctx, rest) {
 }
 
 // Command-activated failover proxy (never a resident daemon).
-function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === 'EPERM'; } }
-
-function wireSettings(ctx, url) {
-  const provider = require('./provider'); const settings = require('./settings'); const { writeJsonStable } = require('./fsutil');
-  const cfg = settings.read(ctx.claudeSettingsPath); // throws on corrupt (safe)
-  cfg.env = cfg.env || {};
-  if (url) cfg.env.ANTHROPIC_BASE_URL = url; else delete cfg.env.ANTHROPIC_BASE_URL;
-  if (!Object.keys(cfg.env).length) delete cfg.env;
-  writeJsonStable(ctx.claudeSettingsPath, cfg, 0o600);
-}
-
 async function cmdProxy(ctx, rest) {
   const proxy = require('./proxy');
   const sub = rest[0];
   const meta = proxy.readMeta(ctx);
-  const running = meta && meta.pid && pidAlive(meta.pid);
+  const running = proxy.isRunning(ctx);
 
   if (sub === 'start') {
     if (running) return fail('proxy already running on 127.0.0.1:' + meta.port + ' (pid ' + meta.pid + ')');
     const pi = rest.indexOf('--port'); const port = pi !== -1 ? parseInt(rest[pi + 1], 10) : proxy.DEFAULT_PORT;
     const wire = rest.indexOf('--wire') !== -1;
-    const child = require('child_process').spawn(process.execPath, [process.argv[1], '__proxy-serve', '--port', String(port)], { detached: true, stdio: 'ignore' });
-    child.unref();
-    const url = 'http://127.0.0.1:' + port;
-    require('./fsutil').writeJsonStable(proxy.metaPath(ctx), { pid: child.pid, port: port, url: url, wired: wire, at: ctx.now() }, 0o600);
-    if (wire) { try { wireSettings(ctx, url); } catch (e) { print(style.warn('⚠️ could not wire settings.json: ' + e.message)); } }
-    print(style.ok('✅') + ' proxy started on ' + url + ' (pid ' + child.pid + ')');
-    print(wire ? 'Wired: Claude Code now routes through it (ANTHROPIC_BASE_URL set). Stop with: keyflip proxy stop'
-               : 'Point Claude Code at it:  export ANTHROPIC_BASE_URL=' + url + '   (or start with --wire)');
+    const r = proxy.start(ctx, { wire: wire, port: port });
+    if (r.wireError) print(style.warn('⚠️ could not wire settings.json: ' + r.wireError));
+    print(style.ok('✅') + ' proxy started on ' + r.url + ' (pid ' + r.pid + ')');
+    print(wire && !r.wireError ? 'Wired: Claude Code now routes through it (ANTHROPIC_BASE_URL set). Stop with: keyflip proxy stop'
+               : 'Point Claude Code at it:  export ANTHROPIC_BASE_URL=' + r.url + '   (or start with --wire)');
     print('Requests failover across your accounts on 429/5xx; stop it with: keyflip proxy stop');
     return;
   }
   if (sub === 'stop') {
-    if (!meta) return print('proxy is not running.');
-    if (meta.pid && pidAlive(meta.pid)) { try { process.kill(meta.pid); } catch (e) { /* */ } }
-    if (meta.wired) { try { wireSettings(ctx, null); } catch (e) { /* */ } }
-    try { fs.rmSync(proxy.metaPath(ctx), { force: true }); } catch (e) { /* */ }
-    print(style.ok('✅') + ' proxy stopped.' + (meta.wired ? ' Unwired settings.json.' : ''));
+    const r = await proxy.stop(ctx);
+    if (r.running === false) return print('proxy is not running.');
+    print(style.ok('✅') + ' proxy stopped.' + (r.wired ? ' Unwired settings.json.' : ''));
     return;
   }
   if (sub === 'status' || sub === undefined) {
