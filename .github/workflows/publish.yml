@@ -1,7 +1,15 @@
-# Publishes ccswitch to the npm registry when a GitHub release is published.
-# Requires the repository secret NPM_TOKEN (an npm automation token). If the
-# unscoped name "ccswitch" is taken, rename the package to @hakkisagdic/ccswitch
-# in package.json and publish with access public.
+# Publishes @hakkisagdic/ccswitch to npm when a GitHub Release is published.
+#
+# Uses npm **Trusted Publishing (OIDC)** — there is NO NPM_TOKEN secret. GitHub
+# Actions proves the workflow's identity to npm via a short-lived OIDC token, and
+# npm auto-attaches build provenance. This is npm's recommended path for CI/CD
+# (classic automation tokens are discouraged for exactly this reason).
+#
+# One-time setup on npmjs.com (package must exist first — see README "Publishing"):
+#   Package → Settings → Trusted Publisher → GitHub Actions:
+#     Organization or user: hakkisagdic
+#     Repository:           ccswitch
+#     Workflow filename:    publish.yml
 name: Publish
 
 on:
@@ -10,7 +18,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm --provenance
+  id-token: write # required for npm Trusted Publishing (OIDC)
 
 jobs:
   publish:
@@ -21,9 +29,18 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - name: Test before publishing
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1; the runner's bundled npm
+      # may be older, so upgrade it explicitly.
+      - name: Upgrade npm (OIDC support)
+        run: npm install -g npm@latest
+      - name: Verify tag matches package.json
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          TAG="${GITHUB_REF_NAME#v}"
+          test "$PKG" = "$TAG" || { echo "::error::version $PKG != tag $TAG"; exit 1; }
+      - name: Test
         run: npm test
-      - name: Publish
+      # No NODE_AUTH_TOKEN: authentication is via OIDC. --provenance is automatic
+      # with trusted publishing; --access public is required for a scoped package.
+      - name: Publish (Trusted Publishing)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

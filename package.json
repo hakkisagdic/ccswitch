@@ -1,5 +1,5 @@
 {
-  "name": "ccswitch",
+  "name": "@hakkisagdic/ccswitch",
   "version": "1.1.0",
   "description": "Switch between multiple Anthropic / Claude Code accounts on macOS, Linux, and Windows — CLI, desktop app and VS Code extension logins together.",
   "bin": {

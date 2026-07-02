@@ -44,6 +44,8 @@ irm https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.ps1 | ie
 **npm ile (her işletim sistemi):**
 
 ```bash
+npm install --global @hakkisagdic/ccswitch          # npm registry'den
+# veya doğrudan git'ten (registry gerekmez):
 npm install --global git+https://github.com/hakkisagdic/ccswitch.git
 ```
 
@@ -314,10 +316,38 @@ Her işletim sistemine sahip olmanız gerekmez. İki katman:
 ## Kaldırma
 
 ```bash
-./uninstall.sh            # macOS/Linux: CLI + uygulamayı kaldır, kayıtlı profilleri tut
-./uninstall.sh --purge    # kayıtlı profilleri de sil
-npm uninstall -g ccswitch # npm ile kurulduysa (her OS)
+./uninstall.sh                       # macOS/Linux: CLI + uygulamayı kaldır, kayıtlı profilleri tut
+./uninstall.sh --purge               # kayıtlı profilleri de sil
+npm uninstall -g @hakkisagdic/ccswitch  # npm ile kurulduysa (her OS)
 ```
+
+---
+
+## Yayınlama (geliştiriciler için)
+
+Sürümler npm'e **Trusted Publishing (OIDC)** ile yayınlanır — repoda `NPM_TOKEN`
+secret'ı **yoktur** (GitHub Actions, npm'e kısa ömürlü bir token'la kimliğini
+kanıtlar; provenance otomatik eklenir). Klasik automation token'ları npm
+tarafından tam da bu yüzden güvenlik riski sayılıp önerilmez.
+
+Tek seferlik kurulum (bir paketin trusted publisher'ı ancak paket var olduktan
+sonra ayarlanabilir):
+
+1. **İlk yayını elle** kendi makinenden yap — bu, repoda saklanan bir token
+   değil, senin etkileşimli `npm login` oturumunu kullanır:
+   ```bash
+   npm login
+   npm publish --access public        # @hakkisagdic/ccswitch oluşturur
+   ```
+2. **npmjs.com** → paket → **Settings → Trusted Publisher → GitHub Actions**:
+   kullanıcı `hakkisagdic`, repo `ccswitch`, workflow `publish.yml`. Kaydet.
+3. Bundan sonrası tamamen otomatik ve token'sız: `package.json`'daki `version`'ı
+   yükselt, sonra
+   ```bash
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+   `release.yml` etiketi doğrular, test eder ve bir GitHub Release oluşturur; o
+   Release'i yayınlamak `publish.yml`'i tetikler ve paket OIDC üzerinden npm'e gider.
 
 ---
 

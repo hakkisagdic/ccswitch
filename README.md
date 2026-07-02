@@ -44,6 +44,8 @@ irm https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.ps1 | ie
 **Via npm (any OS):**
 
 ```bash
+npm install --global @hakkisagdic/ccswitch          # from the npm registry
+# or straight from git (no registry needed):
 npm install --global git+https://github.com/hakkisagdic/ccswitch.git
 ```
 
@@ -291,10 +293,38 @@ Add more Node versions or OS images by editing the `matrix` in the workflow.
 ## Uninstall
 
 ```bash
-./uninstall.sh            # macOS/Linux: remove CLI + app, keep saved profiles
-./uninstall.sh --purge    # also delete saved profiles
-npm uninstall -g ccswitch # if installed via npm (any OS)
+./uninstall.sh                       # macOS/Linux: remove CLI + app, keep saved profiles
+./uninstall.sh --purge               # also delete saved profiles
+npm uninstall -g @hakkisagdic/ccswitch  # if installed via npm (any OS)
 ```
+
+---
+
+## Publishing (maintainers)
+
+Releases publish to npm via **Trusted Publishing (OIDC)** — no `NPM_TOKEN`
+secret lives in this repo (GitHub Actions proves its identity to npm with a
+short-lived token; provenance is attached automatically).
+
+One-time bootstrap (a package must exist before its trusted publisher can be
+configured):
+
+1. **First publish, manually** from your machine — this uses your interactive
+   `npm login`, not a stored token:
+   ```bash
+   npm login
+   npm publish --access public        # creates @hakkisagdic/ccswitch
+   ```
+2. On **npmjs.com** → the package → **Settings → Trusted Publisher → GitHub
+   Actions**, enter: user `hakkisagdic`, repository `ccswitch`, workflow
+   `publish.yml`. Save.
+3. From then on it's fully automated & tokenless: bump `version` in
+   `package.json`, then
+   ```bash
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+   `release.yml` verifies the tag, tests, and cuts a GitHub Release; publishing
+   that Release fires `publish.yml`, which publishes to npm over OIDC.
 
 ---
 
