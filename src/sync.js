@@ -7,9 +7,10 @@
 //
 // (The simpler "point KEYFLIP_CONFIG_DIR at a Dropbox/iCloud folder" path needs
 // no code — it's documented in the README.)
+const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const transfer = require('./transfer');
-const backup = require('./backup');
 
 const MAGIC = 'keyflip-sync';
 const VERSION = 2;
@@ -83,10 +84,22 @@ async function pull(ctx, o) {
   return { found: true, meta: { schema: meta.schema, device: meta.device, at: meta.at, accounts: meta.accounts }, _bundle: meta.bundle };
 }
 
-// Apply a previously-pulled bundle: mandatory safety backup, then import.
+// Apply a previously-pulled bundle. Since applyImport (with --force) OVERWRITES
+// stored credentials in place, the safety snapshot must capture CREDENTIALS too —
+// keyflip's normal metadata backup deliberately excludes secrets, so instead we
+// write a full local export bundle (accounts + tokens) that a later
+// `keyflip import` can restore. It contains secrets, so it's written 0600.
 function apply(ctx, pulled, opts) {
   if (!pulled || !pulled._bundle) throw new Error('nothing to apply');
-  backup.create(ctx, { suffix: 'pre-sync' });
+  try {
+    const dir = path.join(ctx.configDir, 'pre-sync-backups');
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = String(ctx.now()).replace(/[-:]/g, '').replace(/\..*$/, '');
+    let file = path.join(dir, 'pre-sync-' + stamp + '.json'), i = 1;
+    while (fs.existsSync(file)) file = path.join(dir, 'pre-sync-' + stamp + '.' + (i++) + '.json');
+    const current = transfer.buildExport(ctx).envelope;
+    fs.writeFileSync(file, JSON.stringify(current, null, 2), { mode: 0o600 });
+  } catch (e) { /* best effort — never block the pull on the safety copy */ }
   return transfer.applyImport(ctx, pulled._bundle, { force: !!(opts && opts.force) });
 }
 

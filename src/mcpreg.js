@@ -70,8 +70,9 @@ function setEnabled(ctx, name, surface, enabled) {
     const p = desktopConfigPath(ctx);
     if (!p) return 'skipped-no-config';
     if (enabled && !fs.existsSync(p)) return 'skipped-no-config'; // only sync when the app config exists
-    let cfg = {};
-    try { cfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {}; } catch (e) { cfg = {}; }
+    // Symmetric with the claude-code branch: a corrupt-but-existing desktop
+    // config must NOT be treated as empty and overwritten — abort instead.
+    const cfg = require('./fsutil').readJsonForWrite(p) || {};
     cfg.mcpServers = cfg.mcpServers || {};
     if (enabled) cfg.mcpServers[name] = entryFor(ctx, def); else delete cfg.mcpServers[name];
     writeJsonStable(p, cfg, 0o600);

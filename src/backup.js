@@ -8,8 +8,11 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_KEEP = 10;
-const SKIP = ['backups', 'creds', 'logs']; // dirs never backed up (secrets/volatile)
-const SKIP_FILE = /^\.lock|^\.usage-cache\.json$|^\.update-check\.json$/;
+const SKIP = ['backups', 'creds', 'logs', 'skill-backups', 'pre-sync-backups']; // dirs never backed up (secrets/volatile)
+// Never copy a credential-shaped FILE, wherever it sits (a stray/legacy
+// .credentials.json, a *.cred token, or a *.cookies session DB), plus volatile
+// caches/locks.
+const SKIP_FILE = /^\.lock|^\.usage-cache\.json$|^\.update-check\.json$|\.cred$|\.cookies$|^\.credentials\.json$|credentials\.json$/i;
 
 function backupsDir(ctx) { return path.join(ctx.configDir, 'backups'); }
 
@@ -47,11 +50,17 @@ function dirSize(dir) {
 
 function create(ctx, opts) {
   opts = opts || {};
-  const name = 'backup-' + stamp(ctx) + (opts.suffix ? '-' + opts.suffix : '');
-  const dest = path.join(backupsDir(ctx), name);
+  // Guarantee a unique dir even for two backups in the same second (stamp has
+  // 1s resolution) so retention/history never silently merge two snapshots.
+  const base = 'backup-' + stamp(ctx) + (opts.suffix ? '-' + opts.suffix : '');
+  let name = base, dest = path.join(backupsDir(ctx), name), n = 1;
+  while (fs.existsSync(dest)) { name = base + '.' + (n++); dest = path.join(backupsDir(ctx), name); }
   fs.mkdirSync(dest, { recursive: true });
   const files = copyInto(ctx.configDir, dest);
-  prune(ctx, opts.keep !== undefined ? opts.keep : DEFAULT_KEEP);
+  // keep:Infinity skips pruning (used by the pre-restore safety snapshot so it
+  // can never evict the very backup being restored).
+  const keep = opts.keep !== undefined ? opts.keep : DEFAULT_KEEP;
+  if (keep !== Infinity) prune(ctx, keep);
   return { name: name, path: dest, files: files, sizeBytes: dirSize(dest) };
 }
 
@@ -81,9 +90,12 @@ function restore(ctx, nameOrIndex) {
   if (/^[0-9]+$/.test(String(nameOrIndex))) target = all[parseInt(nameOrIndex, 10) - 1];
   else target = all.filter(function (b) { return b.name === nameOrIndex; })[0];
   if (!target) throw new Error('no such backup: ' + nameOrIndex + ' (see: keyflip backup list)');
-  create(ctx, { suffix: 'pre-restore' }); // safety net
+  const before = dirSize(target.path);
+  create(ctx, { suffix: 'pre-restore', keep: Infinity }); // safety net that never prunes the target
+  if (!fs.existsSync(target.path)) throw new Error('the backup being restored disappeared — aborting');
   // copy the backup's files back over configDir (additive; never touches creds)
   const restored = copyInto(target.path, ctx.configDir);
+  if (before > 0 && restored === 0) throw new Error('restore copied 0 files (backup unreadable) — nothing changed');
   return { name: target.name, files: restored };
 }
 

@@ -97,6 +97,11 @@ keyflip <ad> --restart        # ...sormadan Claude'u kapatıp yeniden açar
 keyflip <ad> --force          # ...Claude'u kapatmadan takas eder (kendiniz yeniden başlatın)
 keyflip next                  # sıradaki kayıtlı hesaba dön
 keyflip next --strategy best  # ...veya kalan kotaya göre seç (ayrıca: next-available)
+keyflip provider add <ad> --base-url <url> --key-file -   # 3. taraf endpoint kaydet
+keyflip use <ad>              # Claude Code'u bir provider'a yönlendir (geri: keyflip provider off)
+keyflip doctor                # config, giriş ve endpoint erişilebilirliğini tanıla
+keyflip backup now|list|restore <n>   # keyflip metadata anlık görüntüsü (sırsız)
+keyflip usage --history       # hesap-başına kullanım eğilimi + failover olayları
 keyflip status                # her yüzey hangi hesapta (CLI + masaüstü uygulaması)
 keyflip list [--usage]        # hesaplar; --usage her hesabın 5s/7g kullanımını ekler
 keyflip autoswitch            # kullanımı izle; eşikte CLI hesabını otomatik değiştir
@@ -129,6 +134,31 @@ bildirimi görünür (asla bir komutu engellemez).
   (kimliğe canlı bir Claude oturumu sahipse atlanır; hatalar yüksek sesle uyarır).
 - Kilitli macOS Keychain **"keychain kilitli"** olarak okunur ("kimlik yok" değil),
   5 sn zaman aşımıyla; profil deposu dosyalara düşerek çalışmaya devam eder.
+
+### 3. taraf endpoint'ler — provider'lar (`provider`, `use`)
+
+Hesaplar Anthropic **aboneliklerin** (OAuth). **Provider'lar** ise Claude Code'u
+*farklı bir API endpoint'ine* yönlendirir — relay, kurumsal gateway, AWS Bedrock,
+OpenRouter, Anthropic-uyumlu her şey — `~/.claude/settings.json`'daki `env`
+bloğunu yamalar; Claude Code bunu **anında yeniden yükler, yeniden başlatma
+gerekmez.**
+
+```bash
+keyflip provider add openrouter --base-url https://openrouter.ai/api/v1 --key-file -   # anahtar stdin'den
+keyflip use openrouter          # Claude Code'u ona yönlendir
+keyflip provider off            # aboneliğine geri dön (OAuth)
+keyflip speedtest openrouter    # endpoint'leri ölç, en hızlısını kullan
+keyflip test openrouter         # tek gerçek istek: auth çalışıyor mu?
+keyflip doctor                  # config + giriş + endpoint erişilebilirliği
+```
+
+- **API anahtarı sırdır** → OS kimlik deposunda saklanır, asla metadata dosyasında
+  veya komut satırında değil (stdin/dosyadan okunur).
+- Geçiş yalnızca keyflip'in yönettiği anahtarlara dokunur; kendi `settings.json`'un
+  (hooks, plugins, model override'ları) korunur; `provider off` tam olarak
+  enjekte edileni geri alır.
+- `keyflip gateway use <provider>` aynısını Claude **masaüstü uygulaması** için
+  yapar (uygulamayı yeniden başlat).
 
 ### Kullanıma göre otomatik geçiş (`autoswitch`)
 

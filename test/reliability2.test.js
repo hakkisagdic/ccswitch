@@ -25,8 +25,13 @@ test('breaker opens after N failures, recovers to half-open, closes on successes
   // after recovery window -> half-open (eligible for a trial)
   assert.strictEqual(breaker.state(ctx, 'x', { nowMs: 2000, recoveryMs: 1000 }), 'half-open');
   assert.strictEqual(breaker.isAvailable(ctx, 'x', { nowMs: 2000, recoveryMs: 1000 }), true);
-  breaker.recordSuccess(ctx, 'x', o);
-  breaker.recordSuccess(ctx, 'x', o);                        // 2 successes -> closed
+  // a success WHILE still cooling (before recovery) must be ignored, not force-close
+  breaker.recordSuccess(ctx, 'x', { failureThreshold: 3, recoveryMs: 1000, successesToClose: 2, nowMs: 500 });
+  assert.strictEqual(breaker.state(ctx, 'x', { nowMs: 500, recoveryMs: 1000 }), 'open');
+  // successes only count once past the recovery window (half-open)
+  const after = { failureThreshold: 3, recoveryMs: 1000, successesToClose: 2, nowMs: 2000 };
+  breaker.recordSuccess(ctx, 'x', after);
+  breaker.recordSuccess(ctx, 'x', after);                    // 2 successes -> closed
   assert.strictEqual(breaker.state(ctx, 'x', { nowMs: 2000 }), 'closed');
 });
 

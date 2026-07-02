@@ -48,6 +48,7 @@ function parse(url) {
   if (!params.name) throw new Error('missing name');
   let config;
   try { config = JSON.parse(b64urlDecode(params.config || '')); } catch (e) { throw new Error('config payload is not valid'); }
+  if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('config payload must be a JSON object');
   return { resource: params.resource, name: decodeURIComponent(params.name), config: config };
 }
 

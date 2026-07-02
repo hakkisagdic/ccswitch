@@ -8,7 +8,7 @@
 // leaves the app half-configured.
 const fs = require('fs');
 const path = require('path');
-const { writeJsonStable } = require('./fsutil');
+const { writeJsonStable, readJsonForWrite } = require('./fsutil');
 const provider = require('./provider');
 const txn = require('./txn');
 
@@ -26,7 +26,9 @@ function cfgPath(dir) { return path.join(dir, 'claude_desktop_config.json'); }
 function profilePath(dir) { return path.join(dir, 'configLibrary', KEYFLIP_PROFILE_ID + '.json'); }
 function metaPath(ctx) { return path.join(ctx.configDir, META); }
 
-function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')) || {}; } catch (e) { return {}; } }
+// Missing -> {}; exists-but-corrupt -> throw (the txn wrapper then restores the
+// original bytes instead of clobbering the user's desktop config with {}).
+function readJson(p) { return readJsonForWrite(p) || {}; }
 
 // Switch the desktop app to provider <name>'s gateway.
 function use(ctx, name) {

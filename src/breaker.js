@@ -41,18 +41,25 @@ function recordFailure(ctx, name, opts) {
   const now = opts.nowMs !== undefined ? opts.nowMs : Date.now();
   const all = readAll(ctx); const e = entry(all, name);
   e.failures = (e.failures || 0) + 1; e.successes = 0;
-  if (e.failures >= opts.failureThreshold && e.state !== 'open') { e.state = 'open'; e.openedAt = now; }
+  // Trip open (or RE-ARM the recovery window) on any failure at/over threshold —
+  // a failed half-open trial restarts the cooldown instead of staying eligible.
+  if (e.failures >= opts.failureThreshold) { e.state = 'open'; e.openedAt = now; }
   writeAll(ctx, all);
   return e.state;
 }
 
 function recordSuccess(ctx, name, opts) {
   opts = Object.assign({}, DEFAULTS, opts);
+  const now = opts.nowMs !== undefined ? opts.nowMs : Date.now();
   const all = readAll(ctx); const e = entry(all, name);
-  if (e.state === 'half-open' || (e.state === 'open')) {
-    e.successes = (e.successes || 0) + 1;
-    if (e.successes >= opts.successesToClose) { e.state = 'closed'; e.failures = 0; e.successes = 0; e.openedAt = 0; }
-  } else { e.failures = 0; }
+  if (!e || e.state === 'closed') { e.failures = 0; writeAll(ctx, all); return 'closed'; }
+  // A success only counts toward closing once the recovery window has elapsed
+  // (effective half-open). While still cooling (open), a success is IGNORED —
+  // a passive usage poll must never force-close a breaker inside its cooldown.
+  const cooling = e.state === 'open' && (now - (e.openedAt || 0) < opts.recoveryMs);
+  if (cooling) { writeAll(ctx, all); return 'open'; }
+  e.successes = (e.successes || 0) + 1;
+  if (e.successes >= opts.successesToClose) { e.state = 'closed'; e.failures = 0; e.successes = 0; e.openedAt = 0; }
   writeAll(ctx, all);
   return e.state;
 }

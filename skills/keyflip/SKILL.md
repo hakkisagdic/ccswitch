@@ -66,6 +66,42 @@ only when the user also wants the desktop app moved — it closes the app.
 4. Long unattended runs: suggest `keyflip autoswitch --threshold 90 -y`
    (auto-rotates the CLI credential at the threshold; never touches the app).
 
+## Third-party endpoints (providers) — relays, gateways, Bedrock, OpenRouter
+
+Accounts are OAuth subscriptions; **providers** point Claude Code at a different
+API endpoint by patching `~/.claude/settings.json` env (Claude hot-reloads it —
+no restart). Use when the user wants a relay/gateway/custom base URL, or is out of
+subscription quota but has an API key.
+
+```bash
+keyflip provider add <name> --base-url <url> --key-file <file|->  # key via stdin, never argv
+keyflip use <name>            # route Claude Code to it (no restart)
+keyflip provider off          # back to the subscription (OAuth)
+keyflip provider list         # which providers exist / which is active
+keyflip speedtest <name>      # pick the fastest of a provider's endpoints
+keyflip test <name>           # one real request → auth ok? (auth/network/4xx/5xx)
+keyflip doctor                # config + login + endpoint reachability report
+```
+
+`status` shows the active provider. Switching a provider does NOT change the OAuth
+account; `keyflip provider off` restores it. Never put an API key in argv — use
+`--key-file -` (stdin) or a file.
+
+## Reliability, history, backup, sharing, sync
+
+- `keyflip autoswitch --threshold 90 -y` skips accounts whose circuit breaker is
+  open (repeatedly failing) and logs every failover.
+- `keyflip usage --history` — per-account 5h/7d trend + failover events.
+- `keyflip backup now|list|restore <n>` — snapshots keyflip metadata (no secrets);
+  restore takes a safety backup first.
+- `keyflip share <provider> [--no-secrets]` → a `keyflip://` link; `keyflip import
+  '<url>'` previews + confirms. Account links are pointer-only (never the token).
+- `keyflip sync push|pull --url <webdav> --passphrase-file <f>` — encrypted
+  cross-device sync. Or point `KEYFLIP_CONFIG_DIR` at a Dropbox/iCloud folder.
+- `keyflip mcpreg` — manage MCP servers once, project into Claude Code + Desktop.
+- `keyflip gateway use <provider>` — route the Claude **desktop app** through a
+  provider gateway (restart the app to apply).
+
 ## Parallel accounts in one terminal
 
 ```bash

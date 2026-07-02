@@ -97,6 +97,11 @@ keyflip <name> --restart      # ...close & reopen Claude without asking
 keyflip <name> --force        # ...swap without closing Claude (restart it yourself)
 keyflip next                  # rotate to the next saved account
 keyflip next --strategy best  # ...or pick by remaining quota (also: next-available)
+keyflip provider add <name> --base-url <url> --key-file -   # save a 3rd-party endpoint
+keyflip use <name>            # route Claude Code to a provider (keyflip provider off = back)
+keyflip doctor                # diagnose config, login and endpoint reachability
+keyflip backup now|list|restore <n>   # snapshot keyflip metadata (no secrets)
+keyflip usage --history       # per-account usage trend + failover events
 keyflip status                # which account each surface is on (CLI + desktop app)
 keyflip list [--usage]        # accounts; --usage adds each one's 5h/7d utilization
 keyflip autoswitch            # watch usage; auto-swap the CLI account at a threshold
@@ -144,6 +149,32 @@ keyflip saves it back to the profile on exit.
 > ⚠️ **Asks for confirmation first** (skip with `-y`): a token refresh inside a
 > parallel session rotates that account's refresh token, which can log out
 > *other live copies of the same account*.
+
+### Third-party endpoints — providers (`provider`, `use`)
+
+Accounts are your Anthropic **subscriptions** (OAuth). **Providers** point Claude
+Code at a *different API endpoint* — a relay, a corporate gateway, AWS Bedrock,
+OpenRouter, anything Anthropic-compatible — by patching the `env` block of
+`~/.claude/settings.json`, which Claude Code **hot-reloads, so no restart is
+needed**.
+
+```bash
+keyflip provider add openrouter --base-url https://openrouter.ai/api/v1 --key-file -   # key on stdin
+keyflip use openrouter          # route Claude Code to it
+keyflip provider off            # back to your subscription (OAuth)
+keyflip provider list           # what's saved / active
+keyflip speedtest openrouter    # time the endpoints, use the fastest
+keyflip test openrouter         # one real request: is auth working?
+keyflip doctor                  # config + login + endpoint reachability
+```
+
+- The **API key is a secret** → stored in the OS credential store, never in the
+  metadata file and never on the command line (read it from stdin/a file).
+- Switching only touches the keys keyflip manages; your own `settings.json`
+  (hooks, plugins, model overrides, other env) is preserved, and `provider off`
+  removes *exactly* what was injected.
+- `keyflip gateway use <provider>` does the same for the Claude **desktop app**
+  (restart the app to apply); `keyflip gateway off` restores it.
 
 ### Auto-switch on usage (`autoswitch`)
 

@@ -99,8 +99,8 @@ function use(ctx, name) {
   const meta = read(ctx, name);
   if (!meta) throw new Error("no such provider: '" + name + "' (see: keyflip provider list)");
   const file = ctx.claudeSettingsPath;
-  return txn.withRollback([file], function () {
-    const cfg = settings.read(file);
+  return txn.withRollback([file, activePath(ctx)], function () {
+    const cfg = settings.read(file); // throws (rolled back) if settings.json is corrupt
     const prevEnv = cfg.env && typeof cfg.env === 'object' ? cfg.env : {};
     // Start from the user's env minus ALL previously-managed keys (clean slate
     // for the managed set), then layer this provider's managed env on top.

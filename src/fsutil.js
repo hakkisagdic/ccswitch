@@ -47,4 +47,16 @@ function writeJsonStable(filePath, obj, mode) {
   atomicWrite(filePath, JSON.stringify(sortKeys(obj), null, 2) + '\n', mode);
 }
 
-module.exports = { atomicWrite: atomicWrite, sortKeys: sortKeys, writeJsonStable: writeJsonStable };
+// Read a JSON config for read-modify-WRITE. A MISSING file is a legit empty
+// config ({}); a file that EXISTS but doesn't parse is NOT emptiness — returning
+// {} and writing it back would silently destroy the user's real config. So we
+// throw, and the caller (usually inside txn.withRollback) aborts without writing.
+function readJsonForWrite(filePath) {
+  let raw;
+  try { raw = fs.readFileSync(filePath, 'utf8'); }
+  catch (e) { if (e && e.code === 'ENOENT') return {}; throw e; }
+  try { return JSON.parse(raw); }
+  catch (e) { throw new Error(filePath + ' exists but is not valid JSON — refusing to overwrite it (fix or remove it first)'); }
+}
+
+module.exports = { atomicWrite: atomicWrite, sortKeys: sortKeys, writeJsonStable: writeJsonStable, readJsonForWrite: readJsonForWrite };
