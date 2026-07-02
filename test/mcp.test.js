@@ -1,5 +1,5 @@
 'use strict';
-// MCP server: spec lifecycle + tools over real stdio (spawned `ccswitch mcp`).
+// MCP server: spec lifecycle + tools over real stdio (spawned `keyflip mcp`).
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -7,10 +7,10 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const BIN = path.join(__dirname, '..', 'bin', 'ccswitch.js');
+const BIN = path.join(__dirname, '..', 'bin', 'keyflip.js');
 
 function mkhome() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccswitch-mcp-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-mcp-'));
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), '{"claudeAiOauth":{"accessToken":"TA"}}');
   fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'alice@example.com' }, userID: 'u1' }));
@@ -22,8 +22,8 @@ function cliRun(home, args, input) {
     env: Object.assign({}, process.env, {
       HOME: home, USERPROFILE: home,
       XDG_CONFIG_HOME: path.join(home, '.config'),
-      CCSWITCH_CONFIG_DIR: path.join(home, '.config', 'ccswitch'), APPDATA: path.join(home, 'AppData', 'Roaming'),
-      CCSWITCH_TEST_CLAUDE: 'stopped',
+      KEYFLIP_CONFIG_DIR: path.join(home, '.config', 'keyflip'), APPDATA: path.join(home, 'AppData', 'Roaming'),
+      KEYFLIP_TEST_CLAUDE: 'stopped',
     }),
   });
 }
@@ -36,8 +36,8 @@ function mcpSession(home, messages, expectIds) {
       env: Object.assign({}, process.env, {
         HOME: home, USERPROFILE: home,
         XDG_CONFIG_HOME: path.join(home, '.config'),
-      CCSWITCH_CONFIG_DIR: path.join(home, '.config', 'ccswitch'), APPDATA: path.join(home, 'AppData', 'Roaming'),
-        CCSWITCH_TEST_CLAUDE: 'stopped',
+      KEYFLIP_CONFIG_DIR: path.join(home, '.config', 'keyflip'), APPDATA: path.join(home, 'AppData', 'Roaming'),
+        KEYFLIP_TEST_CLAUDE: 'stopped',
       }),
     });
     const got = {};
@@ -70,11 +70,11 @@ test('MCP lifecycle: initialize negotiates a supported protocol version and decl
     { jsonrpc: '2.0', id: 3, method: 'ping' },
   ], [1, 2, 3]);
   assert.strictEqual(got[1].result.protocolVersion, '2025-06-18');
-  assert.strictEqual(got[1].result.serverInfo.name, 'ccswitch');
+  assert.strictEqual(got[1].result.serverInfo.name, 'keyflip');
   assert.ok(got[1].result.capabilities.tools);
   const names = got[2].result.tools.map(function (t) { return t.name; }).sort();
-  assert.deepStrictEqual(names, ['ccswitch_list', 'ccswitch_next', 'ccswitch_status', 'ccswitch_switch']);
-  const sw = got[2].result.tools.filter(function (t) { return t.name === 'ccswitch_switch'; })[0];
+  assert.deepStrictEqual(names, ['keyflip_list', 'keyflip_next', 'keyflip_status', 'keyflip_switch']);
+  const sw = got[2].result.tools.filter(function (t) { return t.name === 'keyflip_switch'; })[0];
   assert.strictEqual(sw.annotations.destructiveHint, true);
   assert.ok(sw.inputSchema.required.indexOf('confirm') !== -1);
   assert.deepStrictEqual(got[3].result, {});
@@ -90,10 +90,10 @@ test('MCP tools: status/list read state; switch requires confirm and then switch
   const got = await mcpSession(home, [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
     { jsonrpc: '2.0', method: 'notifications/initialized' },
-    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'ccswitch_status', arguments: {} } },
-    { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'ccswitch_switch', arguments: { name: 'alice', confirm: false } } },
-    { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'ccswitch_switch', arguments: { name: 'alice', confirm: true } } },
-    { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'ccswitch_list', arguments: {} } },
+    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'keyflip_status', arguments: {} } },
+    { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'keyflip_switch', arguments: { name: 'alice', confirm: false } } },
+    { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'keyflip_switch', arguments: { name: 'alice', confirm: true } } },
+    { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'keyflip_list', arguments: {} } },
   ], [1, 2, 3, 4, 5]);
 
   assert.strictEqual(got[2].result.structuredContent.cli.email, 'bob@example.com');
@@ -111,7 +111,7 @@ test('MCP: unknown method -> -32601, unknown tool -> -32602, parse error -> -327
   const got = await new Promise(function (resolve, reject) {
     const child = spawn(process.execPath, [BIN, 'mcp'], {
       env: Object.assign({}, process.env, { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, '.config'),
-      CCSWITCH_CONFIG_DIR: path.join(home, '.config', 'ccswitch'), APPDATA: path.join(home, 'AppData', 'Roaming'), CCSWITCH_TEST_CLAUDE: 'stopped' }),
+      KEYFLIP_CONFIG_DIR: path.join(home, '.config', 'keyflip'), APPDATA: path.join(home, 'AppData', 'Roaming'), KEYFLIP_TEST_CLAUDE: 'stopped' }),
     });
     const lines = [];
     const timer = setTimeout(function () { child.kill(); reject(new Error('timeout')); }, 15000);
@@ -149,7 +149,7 @@ test('MCP handles a JSON-RPC batch, dropping the notifications from the reply ar
   const got = await new Promise(function (resolve, reject) {
     const child = spawn(process.execPath, [BIN, 'mcp'], {
       env: Object.assign({}, process.env, { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, '.config'),
-      CCSWITCH_CONFIG_DIR: path.join(home, '.config', 'ccswitch'), APPDATA: path.join(home, 'AppData', 'Roaming'), CCSWITCH_TEST_CLAUDE: 'stopped' }),
+      KEYFLIP_CONFIG_DIR: path.join(home, '.config', 'keyflip'), APPDATA: path.join(home, 'AppData', 'Roaming'), KEYFLIP_TEST_CLAUDE: 'stopped' }),
     });
     let buf = '';
     const timer = setTimeout(function () { child.kill(); reject(new Error('timeout')); }, 15000);
@@ -173,7 +173,7 @@ test('install-skill copies the bundled skill into ~/.claude/skills', function ()
   const home = mkhome();
   const r = cliRun(home, ['install-skill']);
   assert.strictEqual(r.status, 0, r.stderr);
-  const dest = path.join(home, '.claude', 'skills', 'ccswitch', 'SKILL.md');
+  const dest = path.join(home, '.claude', 'skills', 'keyflip', 'SKILL.md');
   assert.ok(fs.existsSync(dest));
-  assert.match(fs.readFileSync(dest, 'utf8'), /^---\r?\nname: ccswitch/);
+  assert.match(fs.readFileSync(dest, 'utf8'), /^---\r?\nname: keyflip/);
 });

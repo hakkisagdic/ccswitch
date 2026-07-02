@@ -53,7 +53,7 @@ test('keys menu: arrow down moves the highlight', async function () {
 });
 
 test('keys menu: Enter switches to the highlighted (default non-active) account', async function () {
-  process.env.CCSWITCH_TEST_CLAUDE = 'stopped';
+  process.env.KEYFLIP_TEST_CLAUDE = 'stopped';
   try {
     const ctx = twoAccounts(); // active bob, default highlight alice
     const io = mockIO();
@@ -63,12 +63,12 @@ test('keys menu: Enter switches to the highlighted (default non-active) account'
     assert.strictEqual(core.currentEmail(ctx), 'alice@x.com');
     assert.match(io.get(), /Switched to: alice@x\.com/);
   } finally {
-    delete process.env.CCSWITCH_TEST_CLAUDE;
+    delete process.env.KEYFLIP_TEST_CLAUDE;
   }
 });
 
 test('keys menu: a number key switches to that account directly', async function () {
-  process.env.CCSWITCH_TEST_CLAUDE = 'stopped';
+  process.env.KEYFLIP_TEST_CLAUDE = 'stopped';
   try {
     const ctx = twoAccounts(); // active bob
     const io = mockIO();
@@ -77,7 +77,7 @@ test('keys menu: a number key switches to that account directly', async function
     await done;
     assert.strictEqual(core.currentEmail(ctx), 'alice@x.com');
   } finally {
-    delete process.env.CCSWITCH_TEST_CLAUDE;
+    delete process.env.KEYFLIP_TEST_CLAUDE;
   }
 });
 

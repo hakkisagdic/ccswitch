@@ -1,4 +1,4 @@
-# Publishes @hakkisagdic/ccswitch to npm when a GitHub Release is published.
+# Publishes keyflip to npm when a GitHub Release is published.
 #
 # Uses npm **Trusted Publishing (OIDC)** — there is NO NPM_TOKEN secret. GitHub
 # Actions proves the workflow's identity to npm via a short-lived OIDC token, and
@@ -8,7 +8,7 @@
 # One-time setup on npmjs.com (package must exist first — see README "Publishing"):
 #   Package → Settings → Trusted Publisher → GitHub Actions:
 #     Organization or user: hakkisagdic
-#     Repository:           ccswitch
+#     Repository:           keyflip
 #     Workflow filename:    publish.yml
 name: Publish
 

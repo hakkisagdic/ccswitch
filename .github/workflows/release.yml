@@ -30,7 +30,7 @@ jobs:
       - name: Run tests
         run: npm test
       - name: Build artifact
-        run: npm pack   # scoped package -> hakkisagdic-ccswitch-<version>.tgz
+        run: npm pack   # scoped package -> keyflip-<version>.tgz
       - name: Create GitHub release with the tarball
         env:
           GH_TOKEN: ${{ github.token }}

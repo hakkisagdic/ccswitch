@@ -1,5 +1,5 @@
 'use strict';
-// Integration tests for the CLI: spawn `node bin/ccswitch.js` against a temp HOME.
+// Integration tests for the CLI: spawn `node bin/keyflip.js` against a temp HOME.
 // A ~/.claude/.credentials.json is created so the file backend is used on every
 // OS (no Keychain, no prompts). Runs identically on macOS/Linux/Windows CI.
 const test = require('node:test');
@@ -8,10 +8,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const BIN = path.join(__dirname, '..', 'bin', 'ccswitch.js');
+const BIN = path.join(__dirname, '..', 'bin', 'keyflip.js');
 
 function setupHome() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccswitch-cli-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-cli-'));
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), '{"live":"TOKEN-1"}'); // forces FileStore
   fs.writeFileSync(path.join(home, '.claude.json'),
@@ -33,7 +33,7 @@ function run(home, args, extraEnv) {
       USERPROFILE: home, // Windows homedir
       XDG_CONFIG_HOME: path.join(home, '.config'),
       APPDATA: path.join(home, 'AppData', 'Roaming'),
-      CCSWITCH_TEST_CLAUDE: 'stopped', // never touch a real app; deterministic across machines
+      KEYFLIP_TEST_CLAUDE: 'stopped', // never touch a real app; deterministic across machines
     }, extraEnv || {}),
   });
 }
@@ -67,7 +67,7 @@ test('capture-app captures the desktop login for a named profile (macOS)', funct
   fs.writeFileSync(path.join(appCfgDir, 'config.json'), JSON.stringify({ 'oauth:tokenCacheV2': 'APP-TOKEN' }));
   const r = run(home, ['add', 'alice', '--app']);
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.ok(fs.existsSync(path.join(home, '.config', 'ccswitch', 'app', 'alice.json')), 'app token saved');
+  assert.ok(fs.existsSync(path.join(home, '.config', 'keyflip', 'app', 'alice.json')), 'app token saved');
 });
 
 test('capture-app works with NO CLI login — creates an app-only account (macOS)', function (t) {
@@ -103,7 +103,7 @@ test('capture-app without a name and no detectable identity gives a helpful erro
   assert.match(r.stderr, /add <name> --app/);
 });
 
-test('clean --force deletes all saved ccswitch data', function () {
+test('clean --force deletes all saved keyflip data', function () {
   const home = setupHome();
   run(home, ['add']); // -> profile alice
   assert.match(run(home, ['list']).stdout, /alice@example\.com/);
@@ -158,7 +158,7 @@ test('an unknown command exits non-zero', function () {
   assert.strictEqual(r.status, 1);
 });
 
-test('ccswitch <name> switches directly (no "switch" keyword)', function () {
+test('keyflip <name> switches directly (no "switch" keyword)', function () {
   const home = setupHome();
   run(home, ['add']);
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
@@ -186,7 +186,7 @@ test('version prints and exits 0', function () {
   const home = setupHome();
   const r = run(home, ['version']);
   assert.strictEqual(r.status, 0);
-  assert.match(r.stdout, /ccswitch \d+\.\d+\.\d+/);
+  assert.match(r.stdout, /keyflip \d+\.\d+\.\d+/);
 });
 
 test('switch refuses to auto-close a running Claude without confirmation (non-interactive)', function () {
@@ -194,9 +194,9 @@ test('switch refuses to auto-close a running Claude without confirmation (non-in
   run(home, ['add']);                                   // save alice (current)
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
   run(home, ['add']);                                   // save bob (current = bob)
-  const r = run(home, ['alice'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const r = run(home, ['alice'], { KEYFLIP_TEST_CLAUDE: 'running' });
   assert.notStrictEqual(r.status, 0);                   // must not silently close/switch
-  const cur = run(home, ['list'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const cur = run(home, ['list'], { KEYFLIP_TEST_CLAUDE: 'running' });
   assert.match(cur.stdout, /bob@example\.com/);         // still on bob — nothing changed
 });
 
@@ -205,7 +205,7 @@ test('switch --restart proceeds while Claude is running (closes/reopens, or swap
   run(home, ['add']);
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
   run(home, ['add']);
-  const r = run(home, ['alice', '--restart'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const r = run(home, ['alice', '--restart'], { KEYFLIP_TEST_CLAUDE: 'running' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(run(home, ['list']).stdout, /Claude Code: alice@example\.com/);
 });
@@ -215,7 +215,7 @@ test('switch --force swaps in place without closing a running Claude', function 
   run(home, ['add']);
   loginAs(home, 'bob@example.com', 'u2', 'TOKEN-2');
   run(home, ['add']);
-  const r = run(home, ['alice', '--force'], { CCSWITCH_TEST_CLAUDE: 'running' });
+  const r = run(home, ['alice', '--force'], { KEYFLIP_TEST_CLAUDE: 'running' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(run(home, ['list']).stdout, /Claude Code: alice@example\.com/);
 });

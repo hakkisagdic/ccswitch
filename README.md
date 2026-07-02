@@ -1,4 +1,6 @@
-# ccswitch — Claude Account Switcher
+# keyflip
+
+> Formerly **ccswitch** — renamed to avoid confusion with the unrelated cc-switch desktop app. Your saved accounts migrate automatically on first run.
 
 **English** | [Türkçe](README.tr.md)
 
@@ -7,13 +9,13 @@ Log in to several accounts once, then hop between them without repeatedly loggin
 
 **Cross-platform:** macOS, Linux, and Windows. Pure Node.js, zero runtime dependencies.
 
-[![CI](https://github.com/hakkisagdic/ccswitch/actions/workflows/ci.yml/badge.svg)](https://github.com/hakkisagdic/ccswitch/actions/workflows/ci.yml)
+[![CI](https://github.com/hakkisagdic/keyflip/actions/workflows/ci.yml/badge.svg)](https://github.com/hakkisagdic/keyflip/actions/workflows/ci.yml)
 
 ---
 
 ## Why it's safe
 
-- **Your OAuth tokens stay in the OS credential store.** On macOS that's the Keychain; on Linux/Windows it's Claude's own `~/.claude/.credentials.json`. ccswitch copies tokens *between* those slots — it adds no new plaintext token file, and this repository contains **no credentials of any kind**.
+- **Your OAuth tokens stay in the OS credential store.** On macOS that's the Keychain; on Linux/Windows it's Claude's own `~/.claude/.credentials.json`. keyflip copies tokens *between* those slots — it adds no new plaintext token file, and this repository contains **no credentials of any kind**.
 - A switch changes only two things: the live credential slot and the account pointer in `~/.claude.json` (`oauthAccount` + `userID`).
 - Your session history in `~/.claude/projects` is **account-independent** — it shows up under whichever account is active.
 
@@ -32,39 +34,39 @@ Log in to several accounts once, then hop between them without repeatedly loggin
 **macOS / Linux — one line** (no npm, no sudo; fetches the sources and, on macOS, builds a launcher app):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hakkisagdic/keyflip/main/install.sh | bash
 ```
 
 **Windows — PowerShell** (also creates a Start Menu / Desktop shortcut):
 
 ```powershell
-irm https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/hakkisagdic/keyflip/main/install.ps1 | iex
 ```
 
 **Via npm (any OS):**
 
 ```bash
-npm install --global @hakkisagdic/ccswitch          # from the npm registry
+npm install --global @hakkisagdic/keyflip          # from the npm registry
 # or straight from git (no registry needed):
-npm install --global git+https://github.com/hakkisagdic/ccswitch.git
+npm install --global git+https://github.com/hakkisagdic/keyflip.git
 ```
 
 **From a clone:**
 
 ```bash
-git clone https://github.com/hakkisagdic/ccswitch.git && cd ccswitch && ./install.sh   # or: .\install.ps1 on Windows
+git clone https://github.com/hakkisagdic/keyflip.git && cd keyflip && ./install.sh   # or: .\install.ps1 on Windows
 ```
 
-The installer places the code in `~/.local/share/ccswitch`, links `ccswitch` into `~/.local/bin`, and adds it to your `PATH`. Uninstall with `./uninstall.sh` (or `npm uninstall -g ccswitch`).
+The installer places the code in `~/.local/share/keyflip`, links `keyflip` into `~/.local/bin`, and adds it to your `PATH`. Uninstall with `./uninstall.sh` (or `npm uninstall -g keyflip`).
 
 ---
 
 ## First-time setup (find & save your accounts)
 
-Nothing to configure by hand — ccswitch **detects the account you're currently logged in to** and names the profile from your email automatically.
+Nothing to configure by hand — keyflip **detects the account you're currently logged in to** and names the profile from your email automatically.
 
-1. In Claude, make sure you're logged in to your **first** account, then run `ccswitch add`.
-2. In Claude, `/login` to your **second** account, then run `ccswitch add`.
+1. In Claude, make sure you're logged in to your **first** account, then run `keyflip add`.
+2. In Claude, `/login` to your **second** account, then run `keyflip add`.
 3. Repeat for as many accounts as you like.
 
 On macOS the first Keychain read shows an **“Always Allow”** prompt — approve it.
@@ -73,10 +75,10 @@ On macOS the first Keychain read shows an **“Always Allow”** prompt — appr
 
 ## Everyday use
 
-Run `ccswitch` (or, on macOS/Windows, open the **“Claude Account Switcher”** launcher) and pick an account by number:
+Run `keyflip` (or, on macOS/Windows, open the **“Keyflip”** launcher) and pick an account by number:
 
 ```
-        Claude Account Switcher (ccswitch)
+        Keyflip (keyflip)
   Active: alice@example.com
 
   → [1] alice@example.com
@@ -85,31 +87,31 @@ Run `ccswitch` (or, on macOS/Windows, open the **“Claude Account Switcher”**
   [number] switch   [a] save current   [d] delete   [r] refresh   [q] quit
 ```
 
-If Claude / Claude Code is open, ccswitch first asks **“Claude will be closed to switch — continue?”** On **yes** it closes Claude, switches, and reopens it (macOS); on **no** it cancels and changes nothing.
+If Claude / Claude Code is open, keyflip first asks **“Claude will be closed to switch — continue?”** On **yes** it closes Claude, switches, and reopens it (macOS); on **no** it cancels and changes nothing.
 
 ### CLI
 
 ```bash
-ccswitch                       # interactive menu (↑/↓ + Enter)
-ccswitch add [name] [--app]    # save the logged-in account(s) — CLI + desktop app
-ccswitch <name|number>         # switch to that account (asks before closing Claude)
-ccswitch <name> --restart      # ...close & reopen Claude without asking
-ccswitch <name> --force        # ...swap without closing Claude (restart it yourself)
-ccswitch next                  # rotate to the next saved account
-ccswitch next --strategy best  # ...or pick by remaining quota (also: next-available)
-ccswitch status                # which account each surface is on (CLI + desktop app)
-ccswitch list [--usage]        # accounts; --usage adds each one's 5h/7d utilization
-ccswitch autoswitch            # watch usage; auto-swap the CLI account at a threshold
-ccswitch link [name|--remove]  # map this directory tree to an account for `run`
-ccswitch run <name> [-- args]  # PARALLEL session: that account in THIS terminal only
-ccswitch add <name> --token <file|->   # headless import of a raw credential
-ccswitch mcp [--setup]         # MCP server over stdio so agents can drive ccswitch
-ccswitch install-skill         # install the Claude Code skill that teaches agents ccswitch
-ccswitch export [file|-]       # back up accounts to a file (CONTAINS SECRETS)
-ccswitch import <file|->       # restore accounts from an export (--force overwrites)
-ccswitch remove <name|number>  # delete a saved account
-ccswitch clean [--logout]      # reset ccswitch data; --logout also signs out everywhere
-ccswitch upgrade               # update ccswitch itself (detects how it was installed)
+keyflip                       # interactive menu (↑/↓ + Enter)
+keyflip add [name] [--app]    # save the logged-in account(s) — CLI + desktop app
+keyflip <name|number>         # switch to that account (asks before closing Claude)
+keyflip <name> --restart      # ...close & reopen Claude without asking
+keyflip <name> --force        # ...swap without closing Claude (restart it yourself)
+keyflip next                  # rotate to the next saved account
+keyflip next --strategy best  # ...or pick by remaining quota (also: next-available)
+keyflip status                # which account each surface is on (CLI + desktop app)
+keyflip list [--usage]        # accounts; --usage adds each one's 5h/7d utilization
+keyflip autoswitch            # watch usage; auto-swap the CLI account at a threshold
+keyflip link [name|--remove]  # map this directory tree to an account for `run`
+keyflip run <name> [-- args]  # PARALLEL session: that account in THIS terminal only
+keyflip add <name> --token <file|->   # headless import of a raw credential
+keyflip mcp [--setup]         # MCP server over stdio so agents can drive keyflip
+keyflip install-skill         # install the Claude Code skill that teaches agents keyflip
+keyflip export [file|-]       # back up accounts to a file (CONTAINS SECRETS)
+keyflip import <file|->       # restore accounts from an export (--force overwrites)
+keyflip remove <name|number>  # delete a saved account
+keyflip clean [--logout]      # reset keyflip data; --logout also signs out everywhere
+keyflip upgrade               # update keyflip itself (detects how it was installed)
 ```
 
 Global flags: `--json` (machine-readable stdout — one JSON object, `schemaVersion: 1`,
@@ -119,7 +121,7 @@ most once a day (never blocks a command).
 
 ### Reliability guarantees
 
-- Every mutation runs under a **cross-process lock** — two ccswitch invocations
+- Every mutation runs under a **cross-process lock** — two keyflip invocations
   can't interleave a switch.
 - A switch is **transactional**: the account pointer is rolled back if the live
   credential write fails, so a half-switched state never survives.
@@ -132,14 +134,14 @@ most once a day (never blocks a command).
 
 ### Parallel sessions (`run`)
 
-`ccswitch run <name>` launches Claude Code as that account **in the current
+`keyflip run <name>` launches Claude Code as that account **in the current
 terminal only** — every other terminal, the desktop app and VS Code keep their
 current account, so two accounts can work side by side. Your `~/.claude`
 customizations (settings, keybindings, CLAUDE.md, skills, commands, agents)
 follow you in via symlinks (`--no-share` for a bare profile); conversation
 history stays per-account. Everything after `--` is forwarded to `claude`
-(e.g. `ccswitch run work -- --resume`). If the session refreshes the token,
-ccswitch saves it back to the profile on exit.
+(e.g. `keyflip run work -- --resume`). If the session refreshes the token,
+keyflip saves it back to the profile on exit.
 
 > ⚠️ **Asks for confirmation first** (skip with `-y`): a token refresh inside a
 > parallel session rotates that account's refresh token, which can log out
@@ -147,24 +149,24 @@ ccswitch saves it back to the profile on exit.
 
 ### Auto-switch on usage (`autoswitch`)
 
-`ccswitch autoswitch --threshold 90 --interval 60 --strategy next-available`
+`keyflip autoswitch --threshold 90 --interval 60 --strategy next-available`
 watches the active account and, when its 5h/7d utilization crosses the
 threshold, **swaps the CLI credential automatically** to the chosen account —
 without closing anything (Claude Code picks the new account up on its next
 request). It confirms once at start (`-y` for scripts) and never touches the
-desktop app. Pair with `ccswitch link <name>` to pin directories to accounts:
-`ccswitch run` with no name uses the nearest linked ancestor directory.
+desktop app. Pair with `keyflip link <name>` to pin directories to accounts:
+`keyflip run` with no name uses the nearest linked ancestor directory.
 
 ### For agents: MCP server & skill
 
-Agents shouldn't have to guess the CLI — ccswitch speaks **MCP**:
+Agents shouldn't have to guess the CLI — keyflip speaks **MCP**:
 
 ```bash
-claude mcp add ccswitch -- ccswitch mcp     # or see: ccswitch mcp --setup
+claude mcp add keyflip -- keyflip mcp     # or see: keyflip mcp --setup
 ```
 
-Tools: `ccswitch_status`, `ccswitch_list` (with `include_usage`),
-`ccswitch_switch`, `ccswitch_next` — proper JSON Schemas, read-only/destructive
+Tools: `keyflip_status`, `keyflip_list` (with `include_usage`),
+`keyflip_switch`, `keyflip_next` — proper JSON Schemas, read-only/destructive
 annotations, and **mutating tools require `confirm: true`**, with descriptions
 instructing the agent to ask the user first. Switching via MCP is always
 in-place (never closes the app under the user).
@@ -173,12 +175,12 @@ There's also a bundled **Claude Code skill** that teaches the agent when and
 how to use all of this (rate-limit playbook, sentinels, parallel sessions):
 
 ```bash
-ccswitch install-skill      # copies it to ~/.claude/skills/ccswitch
+keyflip install-skill      # copies it to ~/.claude/skills/keyflip
 ```
 
 ### Headless import (`add --token`)
 
-`ccswitch add <name> --token <file|->` saves a raw credentials JSON blob
+`keyflip add <name> --token <file|->` saves a raw credentials JSON blob
 (`{"claudeAiOauth":{...}}`) as an account without any login flow — for CI or
 provisioning. The blob is read from a **file or stdin, never argv**. It asks
 for confirmation on a TTY; piped/scripted use must pass `--force`, and
@@ -187,8 +189,8 @@ overwriting an existing account always requires `--force`.
 ### VS Code
 
 The VS Code Claude Code extension shares the CLI's credential store, so every
-ccswitch switch already applies to it (reload the window to pick it up). A thin
-companion extension in [`vscode-ccswitch/`](vscode-ccswitch/) adds a status-bar
+keyflip switch already applies to it (reload the window to pick it up). A thin
+companion extension in [`vscode-keyflip/`](vscode-keyflip/) adds a status-bar
 account indicator and a QuickPick switcher — see its README for local install.
 
 
@@ -198,7 +200,7 @@ The Claude **desktop app** keeps its "Recents" as a per-account index at
 `~/Library/Application Support/Claude/claude-code-sessions/<accountUuid>/<orgUuid>/`,
 so by default each account only shows the Code sessions you started under it.
 
-On every switch (while the app is closed), ccswitch **consolidates** that index —
+On every switch (while the app is closed), keyflip **consolidates** that index —
 copying the Code-session pointers from your other accounts into the active one, so
 its Recents shows them all. It backs up the store first and only ever *adds* files
 (never deletes).
@@ -212,28 +214,28 @@ its Recents shows them all. It backs up the store first and only ever *adds* fil
 The Claude **desktop app** has its own login, separate from the CLI. Its *actual*
 session is the claude.ai cookie in its `Cookies` DB (the `oauth:tokenCache` blobs
 in `config.json` are just a cache the app re-derives from that cookie on launch).
-ccswitch therefore captures and swaps **both** — so `ccswitch <name>` can flip the
+keyflip therefore captures and swaps **both** — so `keyflip <name>` can flip the
 CLI *and* the desktop app to the same account, once each account's desktop login
 has been captured.
 
 The desktop app's login is **independent** from the CLI's — they can even be on
-different accounts at the same time. `ccswitch add` captures **whatever is signed
+different accounts at the same time. `keyflip add` captures **whatever is signed
 in right now**: the CLI login and/or the desktop app's (auto-detected). So per
-account: sign in (app and/or CLI), run `ccswitch add`, done. `ccswitch list`
+account: sign in (app and/or CLI), run `keyflip add`, done. `keyflip list`
 shows what each account has captured (`[cli ✓|— | app ✓|—]`); if the app's account
-can't be auto-identified, name it explicitly (`ccswitch add <name> --app`).
+can't be auto-identified, name it explicitly (`keyflip add <name> --app`).
 
-After that, `ccswitch <name>` (app closed → reopened) swaps the CLI creds **and**
+After that, `keyflip <name>` (app closed → reopened) swaps the CLI creds **and**
 the desktop-app login (token + session cookie), so both come up on the chosen
 account — no manual re-login. `config.json` and the cookie DB are backed up first
-(`~/.config/ccswitch/backups/`).
+(`~/.config/keyflip/backups/`).
 
 > Experimental: it rewrites the app's `config.json` login while the app is closed.
 > If a saved token has fully expired the app may ask you to log in again; just
 > re-`add` that account. Restore a backup if anything looks off.
 
 > Switching should happen while Claude is closed, or Claude may overwrite the change on exit.
-> - **Interactive** (menu, or `ccswitch <name>` in a terminal): if Claude is open you're **asked before it's closed** — answer *no* to cancel.
+> - **Interactive** (menu, or `keyflip <name>` in a terminal): if Claude is open you're **asked before it's closed** — answer *no* to cancel.
 > - `--restart`: close & reopen Claude without asking (macOS).
 > - `--force`: switch without closing Claude — restart it yourself afterward.
 > - Non-interactive (piped/CI) with Claude open and no flag: refuses rather than closing your app unexpectedly.
@@ -245,18 +247,18 @@ account — no manual re-login. `config.json` and the cookie DB are backed up fi
 | Piece | macOS | Linux / Windows |
 |------|-------|-----------------|
 | Live login token | Keychain item `Claude Code-credentials` | `~/.claude/.credentials.json` |
-| Saved profile tokens | Keychain items `ccswitch:<name>` | `~/.config/ccswitch/creds/<name>.cred` (0600) |
+| Saved profile tokens | Keychain items `keyflip:<name>` | `~/.config/keyflip/creds/<name>.cred` (0600) |
 | Account identity | `oauthAccount` + `userID` in `~/.claude.json` | same |
-| Profile metadata (no secrets) | `~/.config/ccswitch/<name>.json` (0600) | same |
+| Profile metadata (no secrets) | `~/.config/keyflip/<name>.json` (0600) | same |
 
-The backend is auto-detected: if a credentials **file** already exists it's used (any OS); otherwise macOS uses the Keychain. A switch copies the saved token into the live slot **and** patches the two fields in `~/.claude.json`. When switching *away*, ccswitch first re-saves the current account's (possibly refreshed) token so nothing goes stale — including auto-saving a logged-in account you hadn't saved yet, so its token isn't lost.
+The backend is auto-detected: if a credentials **file** already exists it's used (any OS); otherwise macOS uses the Keychain. A switch copies the saved token into the live slot **and** patches the two fields in `~/.claude.json`. When switching *away*, keyflip first re-saves the current account's (possibly refreshed) token so nothing goes stale — including auto-saving a logged-in account you hadn't saved yet, so its token isn't lost.
 
 ### Security notes
 
-- **Config integrity:** writes to `~/.claude.json` are atomic and preserve the file's mode; if that file exists but is not valid JSON, ccswitch refuses to touch it rather than risk clobbering your settings.
+- **Config integrity:** writes to `~/.claude.json` are atomic and preserve the file's mode; if that file exists but is not valid JSON, keyflip refuses to touch it rather than risk clobbering your settings.
 - **macOS Keychain:** tokens are written by feeding `security -i` on **stdin** (hex-encoded), so the secret never appears in the process table; `/usr/bin/security` is invoked by absolute path. (Only blobs too large for the stdin line-length budget fall back to an argv write.)
-- **Exports:** `ccswitch export` files contain login secrets — they're written `0600` with a loud warning; pipe to `-` and encrypt (e.g. gpg) for transport, and delete after importing.
-- Switch while Claude is closed. The macOS app/`--restart` quit and reopen it for you; elsewhere ccswitch warns if Claude is running and asks you to restart it after switching.
+- **Exports:** `keyflip export` files contain login secrets — they're written `0600` with a loud warning; pipe to `-` and encrypt (e.g. gpg) for transport, and delete after importing.
+- Switch while Claude is closed. The macOS app/`--restart` quit and reopen it for you; elsewhere keyflip warns if Claude is running and asks you to restart it after switching.
 
 ---
 
@@ -284,8 +286,8 @@ Add more Node versions or OS images by editing the `matrix` in the workflow.
 - **`[throttled]` in `list --usage`:** the usage *endpoint* throttled that
   token — it does **not** mean the account is rate-limited. Try again later.
 - **`[expired]`:** the stored token can't authenticate anymore — log that
-  account in once and run `ccswitch add`.
-- **"keychain locked":** unlock the login keychain; ccswitch's own profile
+  account in once and run `keyflip add`.
+- **"keychain locked":** unlock the login keychain; keyflip's own profile
   storage falls back to files automatically so you can keep working.
 
 ---
@@ -295,7 +297,7 @@ Add more Node versions or OS images by editing the `matrix` in the workflow.
 ```bash
 ./uninstall.sh                       # macOS/Linux: remove CLI + app, keep saved profiles
 ./uninstall.sh --purge               # also delete saved profiles
-npm uninstall -g @hakkisagdic/ccswitch  # if installed via npm (any OS)
+npm uninstall -g @hakkisagdic/keyflip  # if installed via npm (any OS)
 ```
 
 ---
@@ -313,10 +315,10 @@ configured):
    `npm login`, not a stored token:
    ```bash
    npm login
-   npm publish --access public        # creates @hakkisagdic/ccswitch
+   npm publish --access public        # creates @hakkisagdic/keyflip
    ```
 2. On **npmjs.com** → the package → **Settings → Trusted Publisher → GitHub
-   Actions**, enter: user `hakkisagdic`, repository `ccswitch`, workflow
+   Actions**, enter: user `hakkisagdic`, repository `keyflip`, workflow
    `publish.yml`. Save.
 3. From then on it's fully automated & tokenless: bump `version` in
    `package.json`, then

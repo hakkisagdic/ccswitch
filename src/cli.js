@@ -55,32 +55,32 @@ function capturedCliSafe(ctx, name) {
 }
 
 function usage() {
-  print('ccswitch ' + VERSION + ' — switch between Anthropic / Claude Code accounts (macOS, Linux, Windows)');
+  print('keyflip ' + VERSION + ' — switch between Anthropic / Claude Code accounts (macOS, Linux, Windows)');
   print('');
-  print('  ccswitch                       interactive menu (↑/↓ + Enter)');
-  print('  ccswitch add [name] [--app]    save the account(s) you are logged into — Claude Code');
+  print('  keyflip                       interactive menu (↑/↓ + Enter)');
+  print('  keyflip add [name] [--app]    save the account(s) you are logged into — Claude Code');
   print('                                 AND the desktop app, auto-detected. Once per account.');
   print('                                 (--app: desktop app only; name it if undetected)');
-  print('  ccswitch <name|number>         switch to that account (asks before closing Claude;');
+  print('  keyflip <name|number>         switch to that account (asks before closing Claude;');
   print('                                 --restart = no prompt, --force = swap without closing)');
-  print('  ccswitch next [--strategy best|next-available]');
+  print('  keyflip next [--strategy best|next-available]');
   print('                                 rotate to the next account — or pick by remaining quota');
-  print('  ccswitch status                which account each surface is on (CLI + desktop app)');
-  print('  ccswitch list [--usage]        saved accounts; --usage adds 5h/7d quota per account');
-  print('  ccswitch remove <name|number>  delete a saved account');
-  print('  ccswitch autoswitch            watch usage; auto-swap the CLI account at a threshold');
+  print('  keyflip status                which account each surface is on (CLI + desktop app)');
+  print('  keyflip list [--usage]        saved accounts; --usage adds 5h/7d quota per account');
+  print('  keyflip remove <name|number>  delete a saved account');
+  print('  keyflip autoswitch            watch usage; auto-swap the CLI account at a threshold');
   print('                                 (--threshold 90 --interval 60 --strategy next-available)');
-  print('  ccswitch link [name|--remove]  map this directory to an account for `run`');
-  print('  ccswitch run <name> [-- args]  PARALLEL session: run Claude as that account in THIS');
+  print('  keyflip link [name|--remove]  map this directory to an account for `run`');
+  print('  keyflip run <name> [-- args]  PARALLEL session: run Claude as that account in THIS');
   print('                                 terminal only (asks first; --no-share = bare profile)');
-  print('  ccswitch add <name> --token <file|->   headless import of a raw credential (asks first;');
+  print('  keyflip add <name> --token <file|->   headless import of a raw credential (asks first;');
   print('                                 --force for scripts; NEVER pass the token as an argument)');
-  print('  ccswitch export [file|-]       back up saved accounts to a file (contains secrets!)');
-  print('  ccswitch import <file|->       restore accounts from an export (--force overwrites)');
-  print('  ccswitch mcp [--setup]         MCP server over stdio for agents (--setup shows config)');
-  print('  ccswitch install-skill         install the Claude Code skill that teaches agents ccswitch');
-  print('  ccswitch upgrade               update ccswitch itself (auto-detects install method)');
-  print('  ccswitch clean [--logout]      reset ccswitch data; --logout also signs out of');
+  print('  keyflip export [file|-]       back up saved accounts to a file (contains secrets!)');
+  print('  keyflip import <file|->       restore accounts from an export (--force overwrites)');
+  print('  keyflip mcp [--setup]         MCP server over stdio for agents (--setup shows config)');
+  print('  keyflip install-skill         install the Claude Code skill that teaches agents keyflip');
+  print('  keyflip upgrade               update keyflip itself (auto-detects install method)');
+  print('  keyflip clean [--logout]      reset keyflip data; --logout also signs out of');
   print('                                 Claude Code + the desktop app (asks to confirm)');
   print('');
   print('Global flags: --json (machine-readable stdout)   --debug (verbose log to stderr + file)');
@@ -98,11 +98,11 @@ function confirm(question) {
 
 async function cmdSwitch(ctx, rest) {
   const arg = rest[0];
-  if (!arg) return fail('usage: ccswitch <name|number> [--restart|--force]');
+  if (!arg) return fail('usage: keyflip <name|number> [--restart|--force]');
   const autoYes = rest.indexOf('--restart') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
   const force = rest.indexOf('--force') !== -1;
   const name = core.resolveProfile(ctx, arg);
-  if (!name) return fail("no such profile: '" + arg + "' (see: ccswitch list)");
+  if (!name) return fail("no such profile: '" + arg + "' (see: keyflip list)");
   const em = profiles.email(ctx.configDir, name);
   if (em && em === core.currentEmail(ctx)) {
     print("'" + em + "' is already active.");
@@ -123,7 +123,7 @@ async function cmdSwitch(ctx, rest) {
     else if (r.status === 'refresh-failed') print('  ⚠️ the saved token is expiring and could not be refreshed — you may be asked to log in.');
     else if (r.status === 'persist-failed') {
       print('  ⚠️ token refreshed but could NOT be saved — the stored refresh token is now STALE.');
-      print("     Log into this account once and run 'ccswitch add' to repair it.");
+      print("     Log into this account once and run 'keyflip add' to repair it.");
     }
     logmod.log('oauth refresh: ' + r.status);
   }
@@ -190,7 +190,7 @@ async function cmdSwitch(ctx, rest) {
 // Rotate to the next saved account after the currently active one (wraps around).
 async function cmdNext(ctx, rest) {
   const list = core.listProfiles(ctx);
-  if (list.length < 2) return fail('need at least 2 saved accounts to rotate (see: ccswitch add)');
+  if (list.length < 2) return fail('need at least 2 saved accounts to rotate (see: keyflip add)');
   let idx = -1;
   list.forEach(function (e, i) { if (e.active) idx = i; });
   // candidates in rotation order, starting right after the active account
@@ -229,7 +229,7 @@ async function cmdNext(ctx, rest) {
 
 // Backup / machine migration: a versioned envelope of saved accounts.
 function cmdExport(ctx, rest) {
-  const target = rest.filter(function (a) { return a.indexOf('--') !== 0; })[0] || 'ccswitch-export.json';
+  const target = rest.filter(function (a) { return a.indexOf('--') !== 0; })[0] || 'keyflip-export.json';
   const r = transfer.buildExport(ctx);
   if (!r.envelope.accounts.length) {
     return fail('nothing to export' + (r.skipped.length ? ' (credentials unreadable for: ' + r.skipped.join(', ') + ')' : ''));
@@ -245,13 +245,13 @@ function cmdExport(ctx, rest) {
   }
   r.skipped.forEach(function (n) { print('  ⚠️ skipped (credentials unreadable): ' + n); });
   print(style.warn('⚠️  The export CONTAINS LOGIN SECRETS') + ' — store it safely (or pipe through gpg) and delete it after importing.');
-  print('   Desktop-app logins are machine-bound and not included — run ccswitch add on the new machine.');
+  print('   Desktop-app logins are machine-bound and not included — run keyflip add on the new machine.');
   logmod.log('export: ' + r.envelope.accounts.length + ' account(s)');
 }
 
 function cmdImport(ctx, rest) {
   const target = rest.filter(function (a) { return a.indexOf('--') !== 0; })[0];
-  if (!target) return fail('usage: ccswitch import <file|-> [--force]');
+  if (!target) return fail('usage: keyflip import <file|-> [--force]');
   let raw;
   try { raw = target === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(target, 'utf8'); }
   catch (e) { return fail('cannot read ' + target + ': ' + e.message); }
@@ -310,7 +310,7 @@ async function cmdAutoswitch(ctx, rest) {
   }
 }
 
-// Map the current directory (tree) to an account for `ccswitch run`.
+// Map the current directory (tree) to an account for `keyflip run`.
 function cmdLink(ctx, rest) {
   if (rest.indexOf('--remove') !== -1) {
     if (links.remove(ctx, process.cwd())) print('🗑  unlinked ' + process.cwd());
@@ -321,27 +321,27 @@ function cmdLink(ctx, rest) {
   if (!arg) {
     const hit = links.lookup(ctx, process.cwd());
     if (hit) print('linked: ' + hit.name + '  (via ' + hit.dir + ')');
-    else print('this directory is not linked — link it with: ccswitch link <name>');
+    else print('this directory is not linked — link it with: keyflip link <name>');
     return;
   }
   const name = core.resolveProfile(ctx, arg);
   if (!name) return fail("no such account: '" + arg + "'");
   links.set(ctx, process.cwd(), name);
-  print(style.ok('✅') + ' linked ' + process.cwd() + ' → ' + name + "  (used by 'ccswitch run' here)");
+  print(style.ok('✅') + ' linked ' + process.cwd() + ' → ' + name + "  (used by 'keyflip run' here)");
 }
 
 // MCP server (stdio) so agents can inspect/switch accounts themselves.
 async function cmdMcp(ctx, rest) {
   if (rest.indexOf('--setup') !== -1) {
-    print('Add ccswitch as an MCP server:');
+    print('Add keyflip as an MCP server:');
     print('');
     print('  Claude Code (CLI):');
-    print('    claude mcp add ccswitch -- ccswitch mcp');
+    print('    claude mcp add keyflip -- keyflip mcp');
     print('');
     print('  Or in .mcp.json / mcp.json:');
-    print(JSON.stringify({ mcpServers: { ccswitch: { command: 'ccswitch', args: ['mcp'] } } }, null, 2));
+    print(JSON.stringify({ mcpServers: { keyflip: { command: 'keyflip', args: ['mcp'] } } }, null, 2));
     print('');
-    print('Tools: ccswitch_status, ccswitch_list (include_usage), ccswitch_switch, ccswitch_next.');
+    print('Tools: keyflip_status, keyflip_list (include_usage), keyflip_switch, keyflip_next.');
     print('Mutating tools require confirm=true — the agent is instructed to ask the user first.');
     return;
   }
@@ -350,14 +350,14 @@ async function cmdMcp(ctx, rest) {
 }
 
 // Install the bundled agent skill into ~/.claude/skills so Claude Code learns
-// when and how to drive ccswitch.
+// when and how to drive keyflip.
 function cmdInstallSkill(ctx) {
-  const src = path.join(__dirname, '..', 'skills', 'ccswitch');
-  if (!fs.existsSync(path.join(src, 'SKILL.md'))) return fail('bundled skill not found (reinstall ccswitch)');
-  const dest = path.join(ctx.home, '.claude', 'skills', 'ccswitch');
+  const src = path.join(__dirname, '..', 'skills', 'keyflip');
+  if (!fs.existsSync(path.join(src, 'SKILL.md'))) return fail('bundled skill not found (reinstall keyflip)');
+  const dest = path.join(ctx.home, '.claude', 'skills', 'keyflip');
   fs.mkdirSync(dest, { recursive: true });
   fs.cpSync(src, dest, { recursive: true });
-  print(style.ok('✅') + ' installed the ccswitch skill to ' + dest);
+  print(style.ok('✅') + ' installed the keyflip skill to ' + dest);
   print('Claude Code will pick it up on the next session (it teaches account switching,');
   print('usage-aware rotation, parallel sessions and the MCP tools).');
 }
@@ -374,7 +374,7 @@ async function cmdRun(ctx, rest) {
   if (!arg) {
     const hit = links.lookup(ctx, process.cwd());
     if (hit) { arg = hit.name; print('Using linked account for this directory: ' + hit.name); }
-    else return fail('usage: ccswitch run <name|number> [--no-share] [--share-history] [-y] [-- <claude args>]\n(or link this directory once:  ccswitch link <name>)');
+    else return fail('usage: keyflip run <name|number> [--no-share] [--share-history] [-y] [-- <claude args>]\n(or link this directory once:  keyflip link <name>)');
   }
   const name = core.resolveProfile(ctx, arg);
   if (!name) return fail("no such account: '" + arg + "'");
@@ -400,7 +400,7 @@ async function cmdRun(ctx, rest) {
   se.scrubbed.forEach(function (k) { print('  ⚠️ ignoring ' + k + ' for this session (it would override the account).'); });
   print('Launching Claude Code as ' + em + ' (this terminal only)…');
   logmod.log('run session: ' + name);
-  const bin = process.env.CCSWITCH_CLAUDE_BIN || 'claude';
+  const bin = process.env.KEYFLIP_CLAUDE_BIN || process.env.CCSWITCH_CLAUDE_BIN || 'claude';
   const r = require('child_process').spawnSync(bin, fwd, { stdio: 'inherit', env: se.env });
   await withLock(ctx, function () {
     if (session.syncBack(ctx, name)) print('  ↳ session token rotated — saved back to the profile.');
@@ -425,7 +425,7 @@ async function cmdAddToken(ctx, rest) {
     return a.indexOf('-') !== 0 && i !== tokValIdx && i !== emailValIdx;
   })[0];
   if (!name || !profiles.isValidName(name) || !srcArg) {
-    return fail('usage: ccswitch add <name> --token <file|-> [--email a@b.c] [--force]\n(the raw credentials JSON is read from a file or stdin — NEVER pass it as an argument)');
+    return fail('usage: keyflip add <name> --token <file|-> [--email a@b.c] [--force]\n(the raw credentials JSON is read from a file or stdin — NEVER pass it as an argument)');
   }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return fail("'" + email + "' is not a valid email address");
@@ -472,7 +472,7 @@ async function cmdUpgrade(ctx) {
   const method = update.detectInstallMethod(process.argv[1] || '');
   const spawn = update.upgradeSpawn(method);
   if (!spawn) {
-    return fail("couldn't detect how ccswitch was installed — upgrade manually with either:\n  " +
+    return fail("couldn't detect how keyflip was installed — upgrade manually with either:\n  " +
       update.upgradeCommand('installer') + '\n  ' + update.upgradeCommand('npm'));
   }
   print('Upgrading (' + method + '):  ' + update.upgradeCommand(method));
@@ -480,7 +480,7 @@ async function cmdUpgrade(ctx) {
   if (r.error) return fail('could not run the upgrade (' + spawn.cmd + ' not found?): ' + r.error.message +
     '\nRun manually:  ' + update.upgradeCommand(method));
   if (r.status !== 0) return fail('upgrade failed (exit ' + r.status + ') — run manually:  ' + update.upgradeCommand(method));
-  print(style.ok('✅') + ' Upgraded — run ccswitch version to confirm.');
+  print(style.ok('✅') + ' Upgraded — run keyflip version to confirm.');
 }
 
 // One-line answer to "which account am I on?" (both surfaces).
@@ -565,7 +565,7 @@ async function repairCookieCapture(ctx, name) {
 
 function warnIncompleteCookies(name) {
   print("⚠️  The login cookie isn't captured for '" + name + "' yet, so switching the desktop app");
-  print('   to it will NOT work. Quit Claude fully, reopen it, and run:  ccswitch add');
+  print('   to it will NOT work. Quit Claude fully, reopen it, and run:  keyflip add');
 }
 
 // Unified `add`: capture EVERYTHING that's currently logged in — the Claude Code
@@ -587,7 +587,7 @@ async function cmdAdd(ctx, rest) {
       if (ck !== 'ok') warnIncompleteCookies(r.name);
       return;
     }
-    if (r.needName) return fail("Couldn't auto-identify the app's account. Name it:  ccswitch add <name> --app");
+    if (r.needName) return fail("Couldn't auto-identify the app's account. Name it:  keyflip add <name> --app");
     return fail('Could not capture the desktop-app login: ' + (r.reason === 'macos-only' ? 'the desktop app store is macOS-only.' : r.reason));
   }
 
@@ -611,16 +611,16 @@ async function cmdAdd(ctx, rest) {
   if (!cliRes && !appRes.ok) {
     if (appRes.needName) {
       return fail("The desktop app is signed in, but I couldn't identify its account.\n" +
-        'Name it yourself:  ccswitch add <name> --app');
+        'Name it yourself:  keyflip add <name> --app');
     }
     return fail('Nothing to capture. Log in in Claude first.' + (cliErr ? '\n(CLI: ' + cliErr + ')' : ''));
   }
   if (cliRes && appRes.needName) {
     print("↳ The desktop app is signed in but its account couldn't be identified. If it's a");
-    print('  different account than the CLI, capture it with:  ccswitch add <name> --app');
+    print('  different account than the CLI, capture it with:  keyflip add <name> --app');
   }
   const anyIncomplete = profiles.list(ctx.configDir).some(function (n) { return capturedCliSafe(ctx, n) === false || !appauth.hasProfile(ctx, n); });
-  if (anyIncomplete) print("Tip: 'ccswitch list' shows what each account has captured ([cli|app]).");
+  if (anyIncomplete) print("Tip: 'keyflip list' shows what each account has captured ([cli|app]).");
 }
 
 function consolidateAndReport(ctx) {
@@ -648,13 +648,13 @@ async function cmdClean(ctx, rest) {
   try { backupCount = fs.readdirSync(path.join(ctx.configDir, 'backups')).length; } catch (e) { /* none */ }
   const hasSaved = names.length || appCount || backupCount;
 
-  if (!hasSaved && !logout) { print('Nothing to clean — ccswitch has no saved data.'); return; }
+  if (!hasSaved && !logout) { print('Nothing to clean — keyflip has no saved data.'); return; }
 
   const managesApp = !!ctx.appDataDir;
   print('This will:');
   if (hasSaved) {
-    print("  • delete ccswitch's saved data — accounts: " + (names.length ? names.join(', ') : 'none') +
-      '; captured desktop logins: ' + appCount + '; backups: ' + backupCount + '; Keychain ccswitch:*');
+    print("  • delete keyflip's saved data — accounts: " + (names.length ? names.join(', ') : 'none') +
+      '; captured desktop logins: ' + appCount + '; backups: ' + backupCount + '; Keychain keyflip:*');
   }
   if (logout) {
     print('  • SIGN OUT of Claude Code (CLI)' + (managesApp ? ' AND the Claude desktop app' : '') + ' — you will log in again next time');
@@ -673,7 +673,7 @@ async function cmdClean(ctx, rest) {
   if (hasSaved) {
     names.forEach(function (n) { try { ctx.store.delProfile(n); } catch (e) { /* keychain */ } });
     try { fs.rmSync(ctx.configDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
-    print('  ✓ ccswitch saved data removed.');
+    print('  ✓ keyflip saved data removed.');
   }
 
   if (logout) {
@@ -732,7 +732,7 @@ async function cmdList(ctx, rest) {
     return;
   }
   print('Saved accounts (' + ctx.configDir + '):');
-  if (!list.length) { print("  (none yet — log in in Claude, then run 'ccswitch add')"); }
+  if (!list.length) { print("  (none yet — log in in Claude, then run 'keyflip add')"); }
   else {
     list.forEach(function (e) {
       const cli = capturedCliSafe(ctx, e.name);
@@ -786,7 +786,7 @@ async function dispatch(ctx, cmd, rest) {
       case undefined:
         if (!process.stdin.isTTY) { usage(); return; }
         return require('./menu').runMenu(ctx);
-      case 'menu': // hidden: used by the launcher app; same as bare `ccswitch`
+      case 'menu': // hidden: used by the launcher app; same as bare `keyflip`
         return require('./menu').runMenu(ctx);
       case 'add':
         return withLock(ctx, function () { return cmdAdd(ctx, rest); });
@@ -834,7 +834,7 @@ async function dispatch(ctx, cmd, rest) {
       case 'version':
       case '--version':
       case '-v':
-        print('ccswitch ' + VERSION);
+        print('keyflip ' + VERSION);
         return;
       case 'help':
       case '--help':
@@ -842,9 +842,9 @@ async function dispatch(ctx, cmd, rest) {
         usage();
         return;
       default: {
-        // `ccswitch <name|number>` switches directly.
+        // `keyflip <name|number>` switches directly.
         if (core.resolveProfile(ctx, cmd)) return withLock(ctx, function () { return cmdSwitch(ctx, [cmd].concat(rest)); });
-        process.stderr.write("ccswitch: unknown command or account '" + cmd + "'\n\n");
+        process.stderr.write("keyflip: unknown command or account '" + cmd + "'\n\n");
         usage();
         process.exitCode = 1;
         return;

@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { atomicWrite } = require('./fsutil');
 
-const RAW_PKG_URL = 'https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/package.json';
+const RAW_PKG_URL = 'https://raw.githubusercontent.com/hakkisagdic/keyflip/main/package.json';
 const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
 
 function cachePath(ctx) { return path.join(ctx.configDir, '.update-check.json'); }
@@ -49,7 +49,7 @@ async function maybeNotify(ctx, currentVersion, opts) {
     const latest = await latestVersion(ctx, opts);
     if (latest && cmpVersions(latest, currentVersion) > 0) {
       (opts.stderr || process.stderr).write(
-        'ℹ️  ccswitch ' + latest + ' is available (you have ' + currentVersion + ') — run: ccswitch upgrade\n');
+        'ℹ️  keyflip ' + latest + ' is available (you have ' + currentVersion + ') — run: keyflip upgrade\n');
       return latest;
     }
   } catch (e) { /* never block a command on this */ }
@@ -60,7 +60,8 @@ async function maybeNotify(ctx, currentVersion, opts) {
 function detectInstallMethod(binPath) {
   let real = binPath;
   try { real = fs.realpathSync(binPath); } catch (e) { /* keep */ }
-  if (real.indexOf(path.join('.local', 'share', 'ccswitch')) !== -1) return 'installer';
+  if (real.indexOf(path.join('.local', 'share', 'keyflip')) !== -1 ||
+      real.indexOf(path.join('.local', 'share', 'ccswitch')) !== -1) return 'installer'; // legacy install dir
   if (real.indexOf('node_modules') !== -1) return 'npm';
   return 'unknown';
 }
@@ -70,10 +71,10 @@ function upgradeCommand(method, platform) {
   platform = platform || process.platform;
   if (method === 'installer') {
     return platform === 'win32'
-      ? 'irm https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.ps1 | iex'
-      : 'curl -fsSL https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.sh | bash';
+      ? 'irm https://raw.githubusercontent.com/hakkisagdic/keyflip/main/install.ps1 | iex'
+      : 'curl -fsSL https://raw.githubusercontent.com/hakkisagdic/keyflip/main/install.sh | bash';
   }
-  if (method === 'npm') return 'npm install -g git+https://github.com/hakkisagdic/ccswitch.git';
+  if (method === 'npm') return 'npm install -g git+https://github.com/hakkisagdic/keyflip.git';
   return null;
 }
 
@@ -82,13 +83,13 @@ function upgradeCommand(method, platform) {
 function upgradeSpawn(method, platform) {
   platform = platform || process.platform;
   if (method === 'npm') {
-    return { cmd: platform === 'win32' ? 'npm.cmd' : 'npm', args: ['install', '-g', 'git+https://github.com/hakkisagdic/ccswitch.git'] };
+    return { cmd: platform === 'win32' ? 'npm.cmd' : 'npm', args: ['install', '-g', 'git+https://github.com/hakkisagdic/keyflip.git'] };
   }
   if (method === 'installer') {
     if (platform === 'win32') {
-      return { cmd: 'powershell', args: ['-NoProfile', '-Command', 'irm https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.ps1 | iex'] };
+      return { cmd: 'powershell', args: ['-NoProfile', '-Command', 'irm https://raw.githubusercontent.com/hakkisagdic/keyflip/main/install.ps1 | iex'] };
     }
-    return { cmd: 'bash', args: ['-lc', 'curl -fsSL https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.sh | bash'] };
+    return { cmd: 'bash', args: ['-lc', 'curl -fsSL https://raw.githubusercontent.com/hakkisagdic/keyflip/main/install.sh | bash'] };
   }
   return null;
 }

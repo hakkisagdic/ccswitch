@@ -2,14 +2,14 @@
 // Best-effort control of the Claude desktop app, per platform. Only used by the
 // CLI/menu (never by core), so the core stays hermetically testable.
 //
-// Test hook: set CCSWITCH_TEST_CLAUDE=running|stopped to control detection and make
+// Test hook: set KEYFLIP_TEST_CLAUDE=running|stopped to control detection and make
 // quit/open no-ops (so tests never touch a real app). quit flips state to stopped.
 const { run } = require('./exec');
 
 let _testStopped = false;
 
 function plat(p) { return p || process.platform; }
-function testMode() { return process.env.CCSWITCH_TEST_CLAUDE; }
+function testMode() { return process.env.KEYFLIP_TEST_CLAUDE || process.env.CCSWITCH_TEST_CLAUDE; }
 
 function isClaudeRunning(p) {
   const t = testMode();

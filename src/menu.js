@@ -12,7 +12,7 @@ const lock = require('./lock');
 
 function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-// Serialize menu mutations with any other ccswitch process.
+// Serialize menu mutations with any other keyflip process.
 async function withLock(ctx, onErr, fn) {
   let l;
   try { l = await lock.acquire(ctx.configDir, { timeoutMs: 5000 }); }
@@ -131,7 +131,7 @@ async function runMenuLine(ctx, io) {
       const cur = core.currentEmail(ctx);
       const list = core.listProfiles(ctx);
       p('════════════════════════════════════════════');
-      p('        Claude Account Switcher (ccswitch)');
+      p('        Keyflip (keyflip)');
       p('════════════════════════════════════════════');
       p('  Claude Code: ' + (cur || 'not logged in') +
         (ctx.appDataDir ? '   ·   Desktop app: ' + (appActive ? profiles.email(ctx.configDir, appActive) || appActive : 'unknown') : ''));
@@ -206,7 +206,7 @@ function runMenuKeys(ctx, io) {
       if (sel < 0) sel = 0;
       write('\x1b[2J\x1b[3J\x1b[H');
       write('════════════════════════════════════════════\n');
-      write('        Claude Account Switcher (ccswitch)\n');
+      write('        Keyflip (keyflip)\n');
       write('════════════════════════════════════════════\n');
       write('  Claude Code: ' + (cur || 'not logged in') +
         (ctx.appDataDir ? '\n  Desktop app: ' + (appActive ? profiles.email(ctx.configDir, appActive) || appActive : 'unknown') : '') + '\n\n');

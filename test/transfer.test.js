@@ -23,7 +23,7 @@ function seeded() {
 test('export/import round-trips accounts onto a fresh machine', function () {
   const src = seeded();
   const { envelope, skipped } = transfer.buildExport(src);
-  assert.strictEqual(envelope.format, 'ccswitch-export');
+  assert.strictEqual(envelope.format, 'keyflip-export');
   assert.strictEqual(envelope.accounts.length, 2);
   assert.deepStrictEqual(skipped, []);
 
@@ -36,16 +36,16 @@ test('export/import round-trips accounts onto a fresh machine', function () {
 
 test('import validates everything before writing anything', function () {
   const dst = makeCtx();
-  const bad = { format: 'ccswitch-export', version: 1, accounts: [
+  const bad = { format: 'keyflip-export', version: 1, accounts: [
     { name: 'ok', email: 'ok@x.com', cliCredentials: '{"a":1}' },
     { name: 'bad name!', email: 'b@x.com', cliCredentials: '{"a":1}' },
   ] };
   assert.throws(function () { transfer.applyImport(dst, bad); }, /invalid name/);
   assert.strictEqual(dst.store.getProfile('ok'), null); // nothing was written
 
-  assert.throws(function () { transfer.applyImport(dst, { format: 'nope' }); }, /not a ccswitch export/);
-  assert.throws(function () { transfer.applyImport(dst, { format: 'ccswitch-export', version: 99, accounts: [{}] }); }, /unsupported export version/);
-  const corrupt = { format: 'ccswitch-export', version: 1, accounts: [{ name: 'x', cliCredentials: '{"trunc' }] };
+  assert.throws(function () { transfer.applyImport(dst, { format: 'nope' }); }, /not a keyflip export/);
+  assert.throws(function () { transfer.applyImport(dst, { format: 'keyflip-export', version: 99, accounts: [{}] }); }, /unsupported export version/);
+  const corrupt = { format: 'keyflip-export', version: 1, accounts: [{ name: 'x', cliCredentials: '{"trunc' }] };
   assert.throws(function () { transfer.applyImport(dst, corrupt); }, /corrupt/);
 });
 
@@ -61,9 +61,9 @@ test('import skips existing accounts unless --force', function () {
 
 test('CLI export writes a 0600 file and import restores it (spawned)', function (t) {
   if (process.platform === 'win32') return t.skip('mode bits are POSIX-only');
-  const BIN = path.join(__dirname, '..', 'bin', 'ccswitch.js');
+  const BIN = path.join(__dirname, '..', 'bin', 'keyflip.js');
   function mkhome() {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccswitch-xfer-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-xfer-'));
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), '{"live":"T1"}');
     fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' }, userID: 'u' }));
@@ -72,7 +72,7 @@ test('CLI export writes a 0600 file and import restores it (spawned)', function 
   function run(home, args) {
     return require('child_process').spawnSync(process.execPath, [BIN].concat(args), {
       encoding: 'utf8',
-      env: Object.assign({}, process.env, { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, '.config'), APPDATA: path.join(home, 'AppData', 'Roaming'), CCSWITCH_TEST_CLAUDE: 'stopped' }),
+      env: Object.assign({}, process.env, { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, '.config'), APPDATA: path.join(home, 'AppData', 'Roaming'), KEYFLIP_TEST_CLAUDE: 'stopped' }),
     });
   }
   const A = mkhome();

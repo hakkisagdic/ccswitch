@@ -3,10 +3,10 @@
 // a new machine. The envelope contains CLI credential blobs (SECRETS — the file
 // is written 0600 and callers must warn). Desktop-app logins are intentionally
 // EXCLUDED: they're encrypted with a machine-specific safeStorage key and cannot
-// work on another machine (re-run `ccswitch add` there instead).
+// work on another machine (re-run `keyflip add` there instead).
 const profiles = require('./profiles');
 
-const FORMAT = 'ccswitch-export';
+const FORMAT = 'keyflip-export';
 const VERSION = 1;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,8 +38,8 @@ function buildExport(ctx) {
 // Returns { imported: [names], skipped: [names] } or throws with a clear reason.
 function applyImport(ctx, envelope, opts) {
   opts = opts || {};
-  if (!envelope || envelope.format !== FORMAT) throw new Error('not a ccswitch export file');
-  if (envelope.version !== VERSION) throw new Error('unsupported export version ' + envelope.version + ' (this ccswitch understands v' + VERSION + ')');
+  if (!envelope || envelope.format !== FORMAT) throw new Error('not a keyflip export file');
+  if (envelope.version !== VERSION) throw new Error('unsupported export version ' + envelope.version + ' (this keyflip understands v' + VERSION + ')');
   if (!Array.isArray(envelope.accounts) || !envelope.accounts.length) throw new Error('export contains no accounts');
 
   const seen = Object.create(null);

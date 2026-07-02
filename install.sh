@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# ccswitch installer for macOS / Linux (Windows: use install.ps1).
+# keyflip installer for macOS / Linux (Windows: use install.ps1).
 #
 # One-liner (public repo):
-#   curl -fsSL https://raw.githubusercontent.com/hakkisagdic/ccswitch/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hakkisagdic/keyflip/main/install.sh | bash
 # From a clone:
 #   ./install.sh
 #
-# It fetches the (dependency-free) sources into ~/.local/share/ccswitch, links the
-# `ccswitch` command into ~/.local/bin, and on macOS builds a launcher app.
+# It fetches the (dependency-free) sources into ~/.local/share/keyflip, links the
+# `keyflip` command into ~/.local/bin, and on macOS builds a launcher app.
 set -euo pipefail
 
-REPO_OWNER="${CCSWITCH_OWNER:-hakkisagdic}"
-REPO_NAME="${CCSWITCH_REPO:-ccswitch}"
-REPO_REF="${CCSWITCH_REF:-main}"
+REPO_OWNER="${KEYFLIP_OWNER:-hakkisagdic}"
+REPO_NAME="${KEYFLIP_REPO:-keyflip}"
+REPO_REF="${KEYFLIP_REF:-main}"
 GIT_URL="https://github.com/$REPO_OWNER/$REPO_NAME.git"
 TARBALL_URL="https://github.com/$REPO_OWNER/$REPO_NAME/archive/refs/heads/$REPO_REF.tar.gz"
 
-INSTALL_DIR="${CCSWITCH_DIR:-$HOME/.local/share/ccswitch}"
-BIN_DIR="${CCSWITCH_BIN_DIR:-$HOME/.local/bin}"
-APP_DIR="${CCSWITCH_APP_DIR:-$HOME/Applications}"
-APP_NAME="Claude Account Switcher"
+INSTALL_DIR="${KEYFLIP_DIR:-$HOME/.local/share/keyflip}"
+BIN_DIR="${KEYFLIP_BIN_DIR:-$HOME/.local/bin}"
+APP_DIR="${KEYFLIP_APP_DIR:-$HOME/Applications}"
+APP_NAME="Keyflip"
 
 info(){ printf '%s\n' "$*"; }
 die(){ printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -37,11 +37,11 @@ if [ -n "${BASH_SOURCE:-}" ] && [ -f "${BASH_SOURCE[0]:-}" ]; then
   SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
-info "Installing ccswitch ..."
+info "Installing keyflip ..."
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 
-if [ -n "$SELF_DIR" ] && [ -f "$SELF_DIR/package.json" ] && [ -f "$SELF_DIR/bin/ccswitch.js" ]; then
+if [ -n "$SELF_DIR" ] && [ -f "$SELF_DIR/package.json" ] && [ -f "$SELF_DIR/bin/keyflip.js" ]; then
   cp -R "$SELF_DIR/bin" "$SELF_DIR/src" "$SELF_DIR/package.json" "$INSTALL_DIR/"
   info "  • source -> local checkout"
 else
@@ -61,23 +61,23 @@ else
     fi
   fi
   [ "$fetched" -eq 1 ] || die \
-"could not fetch ccswitch (no network, or the repo is private).
+"could not fetch keyflip (no network, or the repo is private).
 Manual install: gh repo clone $REPO_OWNER/$REPO_NAME && cd $REPO_NAME && ./install.sh"
 fi
 
-[ -f "$INSTALL_DIR/bin/ccswitch.js" ] || die "install payload is missing bin/ccswitch.js"
-chmod +x "$INSTALL_DIR/bin/ccswitch.js"
-ln -sf "$INSTALL_DIR/bin/ccswitch.js" "$BIN_DIR/ccswitch"
-CCS_BIN="$BIN_DIR/ccswitch"
-info "  • CLI  -> $BIN_DIR/ccswitch"
+[ -f "$INSTALL_DIR/bin/keyflip.js" ] || die "install payload is missing bin/keyflip.js"
+chmod +x "$INSTALL_DIR/bin/keyflip.js"
+ln -sf "$INSTALL_DIR/bin/keyflip.js" "$BIN_DIR/keyflip"
+CCS_BIN="$BIN_DIR/keyflip"
+info "  • CLI  -> $BIN_DIR/keyflip"
 
 # Put BIN_DIR on PATH for future shells (only touch rc files that already exist).
 ensure_path(){   # returns 0 only if it actually appended
   local rc="$1"
   [ -f "$rc" ] || return 1
-  grep -q 'ccswitch PATH' "$rc" 2>/dev/null && return 1
+  grep -q 'keyflip PATH' "$rc" 2>/dev/null && return 1
   grep -qF "$BIN_DIR" "$rc" 2>/dev/null && return 1
-  { printf '\n# ccswitch PATH\n'; printf 'export PATH="%s:$PATH"\n' "$BIN_DIR"; } >> "$rc"
+  { printf '\n# keyflip PATH\n'; printf 'export PATH="%s:$PATH"\n' "$BIN_DIR"; } >> "$rc"
   info "  • PATH -> added $BIN_DIR to $rc"
   return 0
 }
@@ -86,7 +86,7 @@ if ensure_path "$HOME/.zshrc"; then path_done=1; fi
 if ensure_path "$HOME/.bashrc"; then path_done=1; fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) : ;;
-  *) [ "$path_done" -eq 1 ] || info "  • Note: add $BIN_DIR to your PATH to run 'ccswitch'." ;;
+  *) [ "$path_done" -eq 1 ] || info "  • Note: add $BIN_DIR to your PATH to run 'keyflip'." ;;
 esac
 
 # macOS: build a double-clickable launcher that opens the menu in Terminal.
@@ -97,7 +97,7 @@ if [ "$OS" = "Darwin" ] && command -v osacompile >/dev/null 2>&1; then
   CCS_SH=${CCS_BIN//$q/$esc}      # safe inside shell single quotes
   CCS_AS=${CCS_SH//\\/\\\\}       # AppleScript literal: escape backslashes
   CCS_AS=${CCS_AS//\"/\\\"}       # AppleScript literal: escape double quotes
-  TMP_AS="${TMPDIR:-/tmp}/ccswitch-build-$$.applescript"
+  TMP_AS="${TMPDIR:-/tmp}/keyflip-build-$$.applescript"
   cat > "$TMP_AS" <<AS
 on run
 	tell application "Terminal"
@@ -113,16 +113,24 @@ AS
   rm -f "$TMP_AS"
 fi
 
+# --- clean up a legacy ccswitch install (the tool's former name) -------------
+if [ -e "$BIN_DIR/ccswitch" ] || [ -d "$HOME/.local/share/ccswitch" ]; then
+  rm -f "$BIN_DIR/ccswitch" "$BIN_DIR/ccs" 2>/dev/null || true
+  rm -rf "$HOME/.local/share/ccswitch" 2>/dev/null || true
+  rm -rf "$HOME/Applications/Claude Account Switcher.app" 2>/dev/null || true
+  info "  • removed the old ccswitch install (this tool is now keyflip; saved accounts migrate automatically)"
+fi
+
 info ""
 info "✅ Installed."
 info ""
 info "Next steps:"
-info "  1) In Claude, log in to your first account, then run:   ccswitch add"
-info "  2) Claude /login to your other account, then run:        ccswitch add"
+info "  1) In Claude, log in to your first account, then run:   keyflip add"
+info "  2) Claude /login to your other account, then run:        keyflip add"
 if [ "$OS" = "Darwin" ]; then
-  info "  3) Switch anytime — open \"$APP_NAME\" (Launchpad/Spotlight), or run:  ccswitch"
+  info "  3) Switch anytime — open \"$APP_NAME\" (Launchpad/Spotlight), or run:  keyflip"
 else
-  info "  3) Switch anytime:  ccswitch   (then restart Claude Code to apply)"
+  info "  3) Switch anytime:  keyflip   (then restart Claude Code to apply)"
 fi
 info ""
-info "Open a new terminal (or 'export PATH=\"$BIN_DIR:\$PATH\"') to use 'ccswitch' now."
+info "Open a new terminal (or 'export PATH=\"$BIN_DIR:\$PATH\"') to use 'keyflip' now."

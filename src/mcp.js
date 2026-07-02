@@ -1,5 +1,5 @@
 'use strict';
-// MCP (Model Context Protocol) server over stdio, so agents can operate ccswitch
+// MCP (Model Context Protocol) server over stdio, so agents can operate keyflip
 // themselves. Implements the spec's base protocol: JSON-RPC 2.0, newline-delimited
 // messages, initialize/initialized lifecycle, ping, tools/list + tools/call with
 // JSON Schema inputs, tool annotations (readOnlyHint/destructiveHint) and
@@ -49,7 +49,7 @@ function accountsPayload(ctx, infos) {
 
 const TOOLS = [
   {
-    name: 'ccswitch_status',
+    name: 'keyflip_status',
     title: 'Active Claude account',
     description: 'Which Claude account is active on each surface (Claude Code CLI and the desktop app). Read-only.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -63,7 +63,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'ccswitch_list',
+    name: 'keyflip_list',
     title: 'List saved Claude accounts',
     description: 'Saved Claude accounts with what is captured for each ([cli|app]) and which is active. Set include_usage=true to add each account\'s 5h/7d utilization and remaining headroom (network call, ~1s per account). Read-only.',
     inputSchema: {
@@ -84,13 +84,13 @@ const TOOLS = [
     },
   },
   {
-    name: 'ccswitch_switch',
+    name: 'keyflip_switch',
     title: 'Switch Claude account',
     description: 'Switch the Claude Code CLI credential to a saved account (in place — the desktop app is NOT closed; a running Claude Code picks the new account up on its next request, so the user\'s current conversation continues on the new account). IMPORTANT: this changes which account is billed and rate-limited. Ask the user before calling, then set confirm=true.',
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Account name (from ccswitch_list).' },
+        name: { type: 'string', description: 'Account name (from keyflip_list).' },
         confirm: { type: 'boolean', description: 'Must be true — set it only after the user has agreed to the switch.' },
       },
       required: ['name', 'confirm'],
@@ -102,7 +102,7 @@ const TOOLS = [
         throw new Error('confirmation required: ask the user first, then call again with confirm=true');
       }
       const name = core.resolveProfile(ctx, String(args.name));
-      if (!name) throw new Error("no such account: '" + args.name + "' (use ccswitch_list)");
+      if (!name) throw new Error("no such account: '" + args.name + "' (use keyflip_list)");
       const em = profiles.email(ctx.configDir, name);
       if (em && em === core.currentEmail(ctx)) return { alreadyActive: { name: name, email: em } };
       const l = await lock.acquire(ctx.configDir);
@@ -115,9 +115,9 @@ const TOOLS = [
     },
   },
   {
-    name: 'ccswitch_next',
+    name: 'keyflip_next',
     title: 'Rotate to another Claude account',
-    description: 'Rotate the CLI credential to the next saved account, optionally by remaining quota (strategy "best" = most headroom, "next-available" = first not rate-limited). Same in-place semantics as ccswitch_switch. Ask the user before calling, then set confirm=true.',
+    description: 'Rotate the CLI credential to the next saved account, optionally by remaining quota (strategy "best" = most headroom, "next-available" = first not rate-limited). Same in-place semantics as keyflip_switch. Ask the user before calling, then set confirm=true.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -183,9 +183,9 @@ async function handle(ctx, msg) {
       return respond({
         protocolVersion: version,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'ccswitch', title: 'Claude Account Switcher', version: VERSION },
-        instructions: 'Manage the machine\'s saved Claude accounts. Use ccswitch_status/ccswitch_list to inspect; ' +
-          'ccswitch_switch/ccswitch_next change the active account and REQUIRE confirm=true after asking the user. ' +
+        serverInfo: { name: 'keyflip', title: 'Keyflip', version: VERSION },
+        instructions: 'Manage the machine\'s saved Claude accounts. Use keyflip_status/keyflip_list to inspect; ' +
+          'keyflip_switch/keyflip_next change the active account and REQUIRE confirm=true after asking the user. ' +
           'Switching is in-place: the desktop app is never closed, and a running Claude Code continues on the new account.',
       });
     }

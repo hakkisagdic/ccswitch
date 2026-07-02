@@ -81,16 +81,59 @@ test('reconcileStaleKeychain is a no-op off macOS or on non-file stores', functi
 // ---- migrations ----
 test('migrations stamp schemaVersion once and are idempotent', function () {
   const home = tmpdir();
-  const configDir = path.join(home, '.config', 'ccswitch');
+  const configDir = path.join(home, '.config', 'keyflip');
   fs.mkdirSync(configDir, { recursive: true });
   // legacy profile without schemaVersion (write raw to bypass the auto-stamp)
   fs.writeFileSync(path.join(configDir, 'old.json'), JSON.stringify({ name: 'old', email: 'o@x.com' }));
   const ctx = { configDir: configDir };
   const first = migrations.runMigrations(ctx);
-  assert.deepStrictEqual(first, ['001-stamp-schema-version']);
+  assert.ok(first.indexOf('001-stamp-schema-version') !== -1);
   assert.strictEqual(profiles.read(configDir, 'old').schemaVersion, 1);
   const second = migrations.runMigrations(ctx);
   assert.deepStrictEqual(second, []); // recorded as applied
+});
+
+test('migration 002 adopts an old ccswitch config dir (files + keychain items)', function () {
+  const home = tmpdir();
+  const base = path.join(home, '.config');
+  const oldDir = path.join(base, 'ccswitch');
+  const newDir = path.join(base, 'keyflip');
+  // old-layout data: a profile, creds dir, links
+  fs.mkdirSync(path.join(oldDir, 'creds'), { recursive: true });
+  fs.writeFileSync(path.join(oldDir, 'alice.json'), JSON.stringify({ name: 'alice', email: 'a@x.com', schemaVersion: 1 }));
+  fs.writeFileSync(path.join(oldDir, 'creds', 'alice.cred'), 'BLOB');
+  fs.writeFileSync(path.join(oldDir, 'links.json'), '{}');
+
+  // keychain copy path: fake keychain runner holding the old item
+  const items = { 'ccswitch:alice': 'KC-BLOB' };
+  const runner = function (cmd, args) {
+    const op = args[0];
+    const svc = args[args.indexOf('-s') + 1];
+    if (op === 'find-generic-password') {
+      return items[svc] !== undefined ? { code: 0, stdout: items[svc] + '\n', stderr: '' } : { code: 44, stdout: '', stderr: '' };
+    }
+    if (op === '-i' || op === 'add-generic-password') { // stdin write path uses ['-i']
+      const line = op === '-i' ? arguments[2] : null;
+      return { code: 0, stdout: '', stderr: '' };
+    }
+    if (op === 'delete-generic-password') { delete items[svc]; return { code: 0, stdout: '', stderr: '' }; }
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  const { MemoryStore } = require('../src/stores');
+  const store = new MemoryStore(); store.type = 'keychain'; // trigger the keychain branch
+  const ctx = { configDir: newDir, platform: 'darwin', account: 'me', keychainRunner: runner, store: store };
+
+  const ran = migrations.runMigrations(ctx);
+  assert.ok(ran.indexOf('002-adopt-ccswitch-data') !== -1);
+  // files moved
+  assert.strictEqual(profiles.email(newDir, 'alice'), 'a@x.com');
+  assert.strictEqual(fs.readFileSync(path.join(newDir, 'creds', 'alice.cred'), 'utf8'), 'BLOB');
+  assert.ok(!fs.existsSync(oldDir), 'old dir removed once empty');
+  // keychain item copied to the new prefix and old one deleted
+  assert.strictEqual(store.getProfile('alice'), 'KC-BLOB');
+  assert.strictEqual(items['ccswitch:alice'], undefined);
+  // idempotent
+  assert.deepStrictEqual(migrations.runMigrations(ctx), []);
 });
 
 test('new profiles are written with schemaVersion', function () {

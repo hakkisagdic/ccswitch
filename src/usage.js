@@ -29,7 +29,7 @@ async function fetchUsageDetailed(accessToken, opts) {
       headers: {
         Authorization: 'Bearer ' + accessToken,
         'anthropic-beta': OAUTH_BETA_HEADER,
-        'User-Agent': 'ccswitch/' + VERSION,
+        'User-Agent': 'keyflip/' + VERSION,
       },
       signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(opts.timeoutMs || 5000) : undefined,
     });

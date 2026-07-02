@@ -1,7 +1,7 @@
 ---
-name: ccswitch
+name: keyflip
 description: >-
-  Manage multiple Anthropic/Claude accounts on this machine with the ccswitch
+  Manage multiple Anthropic/Claude accounts on this machine with the keyflip
   CLI: check which account is active, compare each account's remaining 5h/7d
   quota, switch or rotate accounts (with the user's consent), run a second
   account in parallel in one terminal, and diagnose login/quota problems.
@@ -9,9 +9,9 @@ description: >-
   usage caps, "which account am I on", account quotas, or parallel accounts.
 ---
 
-# ccswitch — operating multiple Claude accounts
+# keyflip — operating multiple Claude accounts
 
-ccswitch swaps the machine's Claude credentials between saved accounts. It
+keyflip swaps the machine's Claude credentials between saved accounts. It
 manages BOTH login surfaces: the Claude Code CLI credential (Keychain on macOS,
 `~/.claude/.credentials.json` elsewhere) and the desktop app's login (token +
 session cookie). Chat/session history in `~/.claude/projects` is
@@ -26,15 +26,15 @@ account-independent and always safe.
    with exit 1.
 3. Mutations are already serialized (cross-process lock) and transactional —
    do not retry a failed switch blindly; read the error, it says what to do.
-4. If MCP tools named `ccswitch_*` are available, prefer them over shelling
-   out; their semantics match the CLI (`ccswitch mcp --setup` shows setup).
+4. If MCP tools named `keyflip_*` are available, prefer them over shelling
+   out; their semantics match the CLI (`keyflip mcp --setup` shows setup).
 
 ## Read state (safe, no confirmation needed)
 
 ```bash
-ccswitch status --json          # {"cli":{"email":...},"app":{"name":...,"email":...}}
-ccswitch list --json            # accounts + cliCaptured/appCaptured/activeCli/activeApp
-ccswitch list --usage --json    # + usage {fiveHour:{pct},sevenDay:{pct}}, usageStatus, headroomPct
+keyflip status --json          # {"cli":{"email":...},"app":{"name":...,"email":...}}
+keyflip list --json            # accounts + cliCaptured/appCaptured/activeCli/activeApp
+keyflip list --usage --json    # + usage {fiveHour:{pct},sevenDay:{pct}}, usageStatus, headroomPct
 ```
 
 `usageStatus` sentinels: `ok`, `expired` (token invalid — the account needs a
@@ -45,11 +45,11 @@ proof the account is rate-limited), `error` (network), `no-creds`/`no-token`.
 ## Switching (get consent first)
 
 ```bash
-ccswitch <name|number> --force     # swap in place; a running Claude Code picks it
+keyflip <name|number> --force     # swap in place; a running Claude Code picks it
                                    # up on its next request (keychain cache ~30s on macOS)
-ccswitch <name> --restart          # also close & reopen the desktop app (full switch)
-ccswitch next --strategy best            # rotate to the account with most headroom
-ccswitch next --strategy next-available  # first account that isn't exhausted
+keyflip <name> --restart          # also close & reopen the desktop app (full switch)
+keyflip next --strategy best            # rotate to the account with most headroom
+keyflip next --strategy next-available  # first account that isn't exhausted
 ```
 
 Inside an active Claude Code conversation, prefer `--force` (in-place): the
@@ -58,21 +58,21 @@ only when the user also wants the desktop app moved — it closes the app.
 
 ## When the user hits a rate limit
 
-1. `ccswitch list --usage --json` — find candidates with `headroomPct > 0`.
+1. `keyflip list --usage --json` — find candidates with `headroomPct > 0`.
 2. Report the options and ask which account to switch to (or propose
    `next --strategy best`).
-3. After consent: `ccswitch <name> --force` (or the `ccswitch_switch` MCP tool
+3. After consent: `keyflip <name> --force` (or the `keyflip_switch` MCP tool
    with `confirm: true`).
-4. Long unattended runs: suggest `ccswitch autoswitch --threshold 90 -y`
+4. Long unattended runs: suggest `keyflip autoswitch --threshold 90 -y`
    (auto-rotates the CLI credential at the threshold; never touches the app).
 
 ## Parallel accounts in one terminal
 
 ```bash
-ccswitch run <name> -y -- --resume     # run Claude Code as <name> ONLY here
-ccswitch run <name> --share-history -y # ...sharing conversation history too
-ccswitch link <name>                   # map this directory tree to an account;
-                                       # then plain `ccswitch run` here uses it
+keyflip run <name> -y -- --resume     # run Claude Code as <name> ONLY here
+keyflip run <name> --share-history -y # ...sharing conversation history too
+keyflip link <name>                   # map this directory tree to an account;
+                                       # then plain `keyflip run` here uses it
 ```
 
 `run` isolates via `CLAUDE_CONFIG_DIR`; other terminals/the desktop app keep
@@ -83,10 +83,10 @@ live copies of the same account.
 
 | Symptom | Fix |
 |---|---|
-| `usageStatus: "expired"` | log that account in once, then `ccswitch add` |
-| account shows `[cli — ]` or `[app — ]` in `list` | that surface was never captured: `ccswitch add` (CLI and/or app auto-detected) or `ccswitch add <name> --app` |
+| `usageStatus: "expired"` | log that account in once, then `keyflip add` |
+| account shows `[cli — ]` or `[app — ]` in `list` | that surface was never captured: `keyflip add` (CLI and/or app auto-detected) or `keyflip add <name> --app` |
 | "keychain locked" errors | ask the user to unlock the login keychain; profile storage falls back to files automatically |
 | switch says an account is in use by live sessions | those PIDs are real running Claudes — ask the user before `--force` |
-| moving to a new machine | `ccswitch export -` (SECRETS — pipe through gpg) → `ccswitch import` there; desktop logins must be re-captured on the new machine |
+| moving to a new machine | `keyflip export -` (SECRETS — pipe through gpg) → `keyflip import` there; desktop logins must be re-captured on the new machine |
 
 Never print or log credential blobs, tokens, or export file contents.

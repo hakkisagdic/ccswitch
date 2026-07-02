@@ -46,12 +46,12 @@ test('maybeNotify prints only when newer, and never throws on network failure', 
 
 test('detectInstallMethod recognizes installer copies and npm globals', function () {
   const home = tmpdir();
-  const inst = path.join(home, '.local', 'share', 'ccswitch', 'bin', 'ccswitch.js');
+  const inst = path.join(home, '.local', 'share', 'keyflip', 'bin', 'keyflip.js');
   fs.mkdirSync(path.dirname(inst), { recursive: true });
   fs.writeFileSync(inst, '');
   assert.strictEqual(update.detectInstallMethod(inst), 'installer');
-  assert.strictEqual(update.detectInstallMethod('/usr/local/lib/node_modules/ccswitch/bin/ccswitch.js'), 'npm');
-  assert.strictEqual(update.detectInstallMethod('/some/random/place/ccswitch.js'), 'unknown');
+  assert.strictEqual(update.detectInstallMethod('/usr/local/lib/node_modules/keyflip/bin/keyflip.js'), 'npm');
+  assert.strictEqual(update.detectInstallMethod('/some/random/place/keyflip.js'), 'unknown');
   // Platform-explicit so the assertion holds on the Windows CI runner too.
   assert.ok(update.upgradeCommand('installer', 'linux').indexOf('install.sh') !== -1);
   assert.ok(update.upgradeCommand('installer', 'win32').indexOf('install.ps1') !== -1);

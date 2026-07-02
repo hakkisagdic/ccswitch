@@ -206,7 +206,7 @@ function applyFromProfile(ctx, name) {
   const savedCkPre = profileCookiesPath(ctx, name);
   if (!fs.existsSync(savedCkPre) || !cookiesLookLoggedIn(savedCkPre)) {
     return { ok: false, reason: "saved desktop login for '" + name + "' has no session cookie — " +
-      "sign the app into that account and run 'ccswitch add' again" };
+      "sign the app into that account and run 'keyflip add' again" };
   }
 
   // Back up config.json once (keep the last few).

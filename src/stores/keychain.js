@@ -10,7 +10,7 @@
 const defaultRun = require('../exec').run;
 
 const SERVICE_LIVE = 'Claude Code-credentials'; // the item Claude itself manages
-const PROFILE_PREFIX = 'ccswitch:';
+const PROFILE_PREFIX = 'keyflip:';
 const SECURITY = '/usr/bin/security';
 const NOT_FOUND = 44;          // errSecItemNotFound
 const TIMEOUT_MS = 5000;       // a locked keychain must not hang the CLI

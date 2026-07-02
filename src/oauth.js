@@ -39,7 +39,7 @@ async function refreshBlob(blob, opts) {
   try {
     const res = await doFetch(OAUTH_TOKEN_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'User-Agent': 'ccswitch/' + VERSION },
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'keyflip/' + VERSION },
       body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: rt, client_id: OAUTH_CLIENT_ID }),
       signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(opts.timeoutMs || 10000) : undefined,
     });

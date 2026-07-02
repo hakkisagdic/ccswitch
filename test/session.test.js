@@ -1,5 +1,5 @@
 'use strict';
-// Parallel session mode (`ccswitch run`) + headless token import (`add --token`).
+// Parallel session mode (`keyflip run`) + headless token import (`add --token`).
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -81,9 +81,9 @@ test('syncBack persists a rotated in-session token to the profile (and only then
 });
 
 // ---- spawned CLI: run + add --token guards ----
-const BIN = path.join(__dirname, '..', 'bin', 'ccswitch.js');
+const BIN = path.join(__dirname, '..', 'bin', 'keyflip.js');
 function mkhome() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccswitch-run-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-run-'));
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), BLOB);
   fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' }, userID: 'u1' }));
@@ -95,9 +95,9 @@ function run(home, args, extraEnv, input) {
     env: Object.assign({}, process.env, {
       HOME: home, USERPROFILE: home,
       XDG_CONFIG_HOME: path.join(home, '.config'),
-      CCSWITCH_CONFIG_DIR: path.join(home, '.config', 'ccswitch'), // deterministic across OSes (Windows uses APPDATA otherwise)
+      KEYFLIP_CONFIG_DIR: path.join(home, '.config', 'keyflip'), // deterministic across OSes (Windows uses APPDATA otherwise)
       APPDATA: path.join(home, 'AppData', 'Roaming'),
-      CCSWITCH_TEST_CLAUDE: 'stopped',
+      KEYFLIP_TEST_CLAUDE: 'stopped',
     }, extraEnv || {}),
   });
 }
@@ -121,12 +121,12 @@ test('run -y launches with CLAUDE_CONFIG_DIR and syncs a rotated token back', fu
     "console.log('CFGDIR='+d);",
     "fs.writeFileSync(path.join(d,'.credentials.json'), JSON.stringify({claudeAiOauth:{accessToken:'ROTATED',refreshToken:'R2'}}));",
   ].join('\n'));
-  const r = run(home, ['run', 'a', '-y', '--', probe], { CCSWITCH_CLAUDE_BIN: process.execPath });
+  const r = run(home, ['run', 'a', '-y', '--', probe], { KEYFLIP_CLAUDE_BIN: process.execPath });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /CFGDIR=.*sessions/);
   assert.match(r.stdout, /token rotated — saved back/);
   // stored profile updated (file backend)
-  const cred = fs.readFileSync(path.join(home, '.config', 'ccswitch', 'creds', 'a.cred'), 'utf8');
+  const cred = fs.readFileSync(path.join(home, '.config', 'keyflip', 'creds', 'a.cred'), 'utf8');
   assert.match(cred, /ROTATED/);
 });
 

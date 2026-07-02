@@ -1,19 +1,19 @@
 'use strict';
-// Thin VS Code companion for ccswitch. The VS Code Claude Code extension shares
-// the CLI's credential store, so switching via ccswitch switches it too — this
+// Thin VS Code companion for keyflip. The VS Code Claude Code extension shares
+// the CLI's credential store, so switching via keyflip switches it too — this
 // extension only adds a status-bar indicator and a QuickPick to trigger it.
 const vscode = require('vscode');
 const cp = require('child_process');
 
 let statusItem = null;
 
-function ccswitchBin() {
-  return vscode.workspace.getConfiguration('ccswitch').get('path') || 'ccswitch';
+function keyflipBin() {
+  return vscode.workspace.getConfiguration('keyflip').get('path') || 'keyflip';
 }
 
 function runJson(args) {
   return new Promise(function (resolve, reject) {
-    cp.execFile(ccswitchBin(), args.concat(['--json']), { timeout: 15000 }, function (err, stdout) {
+    cp.execFile(keyflipBin(), args.concat(['--json']), { timeout: 15000 }, function (err, stdout) {
       try { resolve(JSON.parse(String(stdout).trim().split('\n').pop())); }
       catch (e) { reject(err || e); }
     });
@@ -26,12 +26,12 @@ async function refreshStatus() {
     const st = await runJson(['status']);
     const email = (st.cli && st.cli.email) || null;
     statusItem.text = '$(account) ' + (email ? email.split('@')[0] : 'not logged in');
-    statusItem.tooltip = 'Claude account (ccswitch)\nCLI: ' + ((st.cli && st.cli.email) || '—') +
+    statusItem.tooltip = 'Claude account (keyflip)\nCLI: ' + ((st.cli && st.cli.email) || '—') +
       (st.app ? '\nDesktop app: ' + (st.app.email || st.app.name) : '') + '\n\nClick to switch';
     statusItem.show();
   } catch (e) {
-    statusItem.text = '$(account) ccswitch?';
-    statusItem.tooltip = 'ccswitch not found or failed — set "ccswitch.path" in settings.\n' + (e && e.message ? e.message : '');
+    statusItem.text = '$(account) keyflip?';
+    statusItem.tooltip = 'keyflip not found or failed — set "keyflip.path" in settings.\n' + (e && e.message ? e.message : '');
     statusItem.show();
   }
 }
@@ -40,12 +40,12 @@ async function switchAccount() {
   let list;
   try { list = await runJson(['list']); }
   catch (e) {
-    vscode.window.showErrorMessage('ccswitch failed: ' + (e && e.message ? e.message : e) + ' — is ccswitch installed and on PATH?');
+    vscode.window.showErrorMessage('keyflip failed: ' + (e && e.message ? e.message : e) + ' — is keyflip installed and on PATH?');
     return;
   }
   const accounts = (list.accounts || []);
   if (!accounts.length) {
-    vscode.window.showWarningMessage("No saved Claude accounts yet — run 'ccswitch add' in a terminal while logged in.");
+    vscode.window.showWarningMessage("No saved Claude accounts yet — run 'keyflip add' in a terminal while logged in.");
     return;
   }
   const items = accounts.map(function (a) {
@@ -69,7 +69,7 @@ async function switchAccount() {
     { location: vscode.ProgressLocation.Notification, title: 'Switching Claude account…' },
     function () {
       return new Promise(function (resolve) {
-        cp.execFile(ccswitchBin(), [pick.name, '--restart', '--json'], { timeout: 60000 }, function (err, stdout, stderr) {
+        cp.execFile(keyflipBin(), [pick.name, '--restart', '--json'], { timeout: 60000 }, function (err, stdout, stderr) {
           if (err) {
             vscode.window.showErrorMessage('Switch failed: ' + (String(stderr).trim() || err.message));
           } else {
@@ -88,10 +88,10 @@ async function switchAccount() {
 
 function activate(context) {
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusItem.command = 'ccswitch.switch';
+  statusItem.command = 'keyflip.switch';
   context.subscriptions.push(statusItem);
-  context.subscriptions.push(vscode.commands.registerCommand('ccswitch.switch', switchAccount));
-  context.subscriptions.push(vscode.commands.registerCommand('ccswitch.refresh', refreshStatus));
+  context.subscriptions.push(vscode.commands.registerCommand('keyflip.switch', switchAccount));
+  context.subscriptions.push(vscode.commands.registerCommand('keyflip.refresh', refreshStatus));
   refreshStatus();
   const timer = setInterval(refreshStatus, 60000);
   context.subscriptions.push({ dispose: function () { clearInterval(timer); } });

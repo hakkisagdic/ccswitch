@@ -1,0 +1,45 @@
+{
+  "name": "keyflip-vscode",
+  "displayName": "keyflip — Keyflip",
+  "description": "Shows the active Claude account in the status bar and switches accounts via the keyflip CLI.",
+  "version": "0.1.0",
+  "publisher": "hakkisagdic",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hakkisagdic/keyflip.git",
+    "directory": "vscode-keyflip"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "keyflip.switch",
+        "title": "keyflip: Switch Claude Account"
+      },
+      {
+        "command": "keyflip.refresh",
+        "title": "keyflip: Refresh Account Status"
+      }
+    ],
+    "configuration": {
+      "title": "keyflip",
+      "properties": {
+        "keyflip.path": {
+          "type": "string",
+          "default": "keyflip",
+          "description": "Path to the keyflip executable (default: resolve from PATH)."
+        }
+      }
+    }
+  }
+}

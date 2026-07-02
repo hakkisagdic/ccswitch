@@ -19,7 +19,7 @@ function setup() {
   fs.writeFileSync(path.join(store, B, OB, 'local_2.json'), JSON.stringify({ sessionId: 'local_2', cliSessionId: 'cs2', title: 'in-B' }));
   const ctx = {
     home: home, platform: 'darwin', appDataDir: appDataDir,
-    configDir: path.join(home, '.config', 'ccswitch'),
+    configDir: path.join(home, '.config', 'keyflip'),
     now: function () { return '2026-01-01T00:00:00.000Z'; },
   };
   return { ctx: ctx, store: store, A: A, OA: OA, B: B, OB: OB };

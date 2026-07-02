@@ -25,7 +25,7 @@ jobs:
       - name: Run tests
         run: npm test
       - name: CLI smoke test
-        run: node bin/ccswitch.js version
+        run: node bin/keyflip.js version
 
   # Real-keychain end-to-end: exercises /usr/bin/security against a throwaway
   # keychain (never the runner's login keychain). Hard timeout so a stuck

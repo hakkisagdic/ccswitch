@@ -1,6 +1,6 @@
 'use strict';
 // Lightweight action log for postmortems. Key events (switch/add/clean/errors)
-// are appended to <configDir>/logs/ccswitch.log — the directory is only created
+// are appended to <configDir>/logs/keyflip.log — the directory is only created
 // on the first record, so read-only runs leave no artifacts. --debug additionally
 // echoes records to stderr. Never logs secrets.
 const fs = require('fs');
@@ -18,7 +18,7 @@ function log(msg) {
   if (!state.dir) return;
   try {
     if (!state.ready) { fs.mkdirSync(state.dir, { recursive: true }); state.ready = true; }
-    fs.appendFileSync(path.join(state.dir, 'ccswitch.log'), new Date().toISOString() + ' ' + msg + '\n', { mode: 0o600 });
+    fs.appendFileSync(path.join(state.dir, 'keyflip.log'), new Date().toISOString() + ' ' + msg + '\n', { mode: 0o600 });
   } catch (e) { /* logging must never break the tool */ }
 }
 

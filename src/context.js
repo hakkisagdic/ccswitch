@@ -10,14 +10,14 @@ function createContext(opts) {
   const home = opts.home || os.homedir();
   const platform = opts.platform || process.platform;
 
-  let configDir = opts.configDir || process.env.CCSWITCH_CONFIG_DIR;
+  let configDir = opts.configDir || process.env.KEYFLIP_CONFIG_DIR || process.env.CCSWITCH_CONFIG_DIR;
   if (!configDir) {
     if (platform === 'win32') {
       const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-      configDir = path.join(appData, 'ccswitch');
+      configDir = path.join(appData, 'keyflip');
     } else {
       const xdg = process.env.XDG_CONFIG_HOME || path.join(home, '.config');
-      configDir = path.join(xdg, 'ccswitch');
+      configDir = path.join(xdg, 'keyflip');
     }
   }
 

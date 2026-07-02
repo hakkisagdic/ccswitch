@@ -82,12 +82,12 @@ function addCurrent(ctx, nameOverride) {
 // JSON it must parse — a truncated blob is refused instead of restored.
 function validateBlob(name, blob) {
   if (typeof blob !== 'string' || !blob.trim()) {
-    throw new Error("profile '" + name + "' credential data is empty — remove it and run 'ccswitch add' again");
+    throw new Error("profile '" + name + "' credential data is empty — remove it and run 'keyflip add' again");
   }
   const t = blob.trim();
   if (t[0] === '{' || t[0] === '[') {
     try { JSON.parse(t); } catch (e) {
-      throw new Error("profile '" + name + "' credential data is unreadable (corrupt/truncated) — remove it and run 'ccswitch add' again");
+      throw new Error("profile '" + name + "' credential data is unreadable (corrupt/truncated) — remove it and run 'keyflip add' again");
     }
   }
 }

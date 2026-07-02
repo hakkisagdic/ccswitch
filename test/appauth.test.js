@@ -15,7 +15,7 @@ function setup() {
   fs.writeFileSync(cfg, JSON.stringify({ locale: 'en-US', 'oauth:tokenCache': 'TOKEN-A-V1', 'oauth:tokenCacheV2': 'TOKEN-A-V2', keep: 'me' }));
   const cookies = path.join(appDataDir, 'Cookies');
   fs.writeFileSync(cookies, 'sessionKey COOKIES-A'); // stands in for the SQLite session DB
-  const ctx = { home: home, platform: 'darwin', appDataDir: appDataDir, configDir: path.join(home, '.config', 'ccswitch'), now: function () { return '2026-01-01T00:00:00.000Z'; } };
+  const ctx = { home: home, platform: 'darwin', appDataDir: appDataDir, configDir: path.join(home, '.config', 'keyflip'), now: function () { return '2026-01-01T00:00:00.000Z'; } };
   return { ctx: ctx, cfg: cfg, cookies: cookies };
 }
 

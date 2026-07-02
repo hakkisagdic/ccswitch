@@ -12,7 +12,7 @@
 //
 // Sharing: settings.json, keybindings.json, CLAUDE.md, skills/, commands/ and
 // agents/ follow the user into the session via symlinks (copies on Windows,
-// re-synced each launch). A manifest records what ccswitch created so cleanup
+// re-synced each launch). A manifest records what keyflip created so cleanup
 // never touches user data. Account-scoped things (projects/, sessions/,
 // .claude.json, .credentials.json) are deliberately NOT shared.
 const fs = require('fs');
@@ -22,7 +22,7 @@ const claudeCfg = require('./claude');
 const { atomicWrite } = require('./fsutil');
 
 const SHARED_ITEMS = ['settings.json', 'keybindings.json', 'CLAUDE.md', 'skills', 'commands', 'agents'];
-const SHARE_MANIFEST = '.ccswitch-shared.json';
+const SHARE_MANIFEST = '.keyflip-shared.json';
 
 // Env vars that make claude bypass account OAuth entirely — scrubbed from the
 // session launch env (running account N is an explicit request for account N).
@@ -37,10 +37,18 @@ const AUTH_OVERRIDE_ENV_VARS = [
 function sessionDir(ctx, name) { return path.join(ctx.configDir, 'sessions', name); }
 
 function readManifest(dir) {
-  try { return JSON.parse(fs.readFileSync(path.join(dir, SHARE_MANIFEST), 'utf8')).created || []; }
-  catch (e) { return []; }
+  const names = [];
+  [SHARE_MANIFEST, '.ccswitch-shared.json' /* legacy (pre-rename) */].forEach(function (f) {
+    try {
+      JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).created.forEach(function (n) {
+        if (names.indexOf(n) === -1) names.push(n);
+      });
+    } catch (e) { /* absent */ }
+  });
+  return names;
 }
 function writeManifest(dir, created) {
+  try { fs.rmSync(path.join(dir, '.ccswitch-shared.json'), { force: true }); } catch (e) { /* legacy */ }
   atomicWrite(path.join(dir, SHARE_MANIFEST), JSON.stringify({ created: created }, null, 2), 0o600);
 }
 
@@ -81,7 +89,7 @@ function syncShared(ctx, dir, share, extra) {
 function prepareSession(ctx, name, opts) {
   opts = opts || {};
   const blob = ctx.store.getProfile(name);
-  if (!blob) throw new Error("profile '" + name + "' has no stored CLI credentials — run 'ccswitch add' while logged into it");
+  if (!blob) throw new Error("profile '" + name + "' has no stored CLI credentials — run 'keyflip add' while logged into it");
   try {
     const d = JSON.parse(blob);
     if (!d || !d.claudeAiOauth) throw 0;

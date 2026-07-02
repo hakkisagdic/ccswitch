@@ -1,14 +1,14 @@
 {
-  "name": "@hakkisagdic/ccswitch",
-  "version": "1.1.0",
-  "description": "Switch between multiple Anthropic / Claude Code accounts on macOS, Linux, and Windows — CLI, desktop app and VS Code extension logins together.",
+  "name": "keyflip",
+  "version": "1.2.0",
+  "description": "Flip between multiple AI CLI accounts (Anthropic / Claude Code today) — CLI, desktop app and VS Code logins together. Formerly ccswitch.",
   "bin": {
-    "ccswitch": "bin/ccswitch.js",
-    "ccs": "bin/ccswitch.js"
+    "keyflip": "bin/keyflip.js",
+    "kf": "bin/keyflip.js"
   },
   "scripts": {
     "test": "node --test",
-    "start": "node bin/ccswitch.js"
+    "start": "node bin/keyflip.js"
   },
   "engines": {
     "node": ">=18"
@@ -30,13 +30,13 @@
   ],
   "author": "Hakkı Sağdıç",
   "license": "MIT",
-  "homepage": "https://github.com/hakkisagdic/ccswitch#readme",
+  "homepage": "https://github.com/hakkisagdic/keyflip#readme",
   "bugs": {
-    "url": "https://github.com/hakkisagdic/ccswitch/issues"
+    "url": "https://github.com/hakkisagdic/keyflip/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hakkisagdic/ccswitch.git"
+    "url": "git+https://github.com/hakkisagdic/keyflip.git"
   },
   "os": [
     "darwin",

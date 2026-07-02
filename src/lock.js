@@ -1,5 +1,5 @@
 'use strict';
-// Cross-process advisory lock so two ccswitch invocations can't interleave a
+// Cross-process advisory lock so two keyflip invocations can't interleave a
 // switch (e.g. double-fired alias, the launcher app racing a terminal). The lock
 // is <configDir>/.lock holding {pid, at, token}. A lock is reclaimed only when
 // its owner is provably gone (dead pid) or absurdly old (a safety net against a
@@ -21,7 +21,7 @@ function makeToken() {
 }
 
 // Acquire the mutation lock. Resolves to { release() }. Throws Error with
-// code 'ELOCKED' if another live ccswitch holds it past timeoutMs.
+// code 'ELOCKED' if another live keyflip holds it past timeoutMs.
 async function acquire(configDir, opts) {
   opts = opts || {};
   const file = path.join(configDir, '.lock');
@@ -68,7 +68,7 @@ async function acquire(configDir, opts) {
         continue;
       }
       if (Date.now() - start >= timeoutMs) {
-        const err = new Error('another ccswitch is running (lock held by pid ' + (info && info.pid) + ') — try again in a moment');
+        const err = new Error('another keyflip is running (lock held by pid ' + (info && info.pid) + ') — try again in a moment');
         err.code = 'ELOCKED';
         throw err;
       }

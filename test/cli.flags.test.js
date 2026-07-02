@@ -6,10 +6,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const BIN = path.join(__dirname, '..', 'bin', 'ccswitch.js');
+const BIN = path.join(__dirname, '..', 'bin', 'keyflip.js');
 
 function setupHome() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccswitch-flags-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-flags-'));
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), '{"live":"TOKEN-1"}');
   fs.writeFileSync(path.join(home, '.claude.json'),
@@ -27,9 +27,9 @@ function run(home, args, extraEnv) {
     env: Object.assign({}, process.env, {
       HOME: home, USERPROFILE: home,
       XDG_CONFIG_HOME: path.join(home, '.config'),
-      CCSWITCH_CONFIG_DIR: path.join(home, '.config', 'ccswitch'), // deterministic across OSes (Windows uses APPDATA otherwise)
+      KEYFLIP_CONFIG_DIR: path.join(home, '.config', 'keyflip'), // deterministic across OSes (Windows uses APPDATA otherwise)
       APPDATA: path.join(home, 'AppData', 'Roaming'),
-      CCSWITCH_TEST_CLAUDE: 'stopped',
+      KEYFLIP_TEST_CLAUDE: 'stopped',
     }, extraEnv || {}),
   });
 }
@@ -95,10 +95,10 @@ test('next with fewer than 2 accounts fails cleanly', function () {
 test('a read-only run creates no log dir; a mutation writes the action log', function () {
   const home = setupHome();
   run(home, ['list']);
-  const logDir = path.join(home, '.config', 'ccswitch', 'logs');
+  const logDir = path.join(home, '.config', 'keyflip', 'logs');
   assert.ok(!fs.existsSync(logDir), 'no logs for read-only run');
   run(home, ['add']);
-  assert.ok(fs.existsSync(path.join(logDir, 'ccswitch.log')), 'mutation logged');
+  assert.ok(fs.existsSync(path.join(logDir, 'keyflip.log')), 'mutation logged');
 });
 
 test('--debug echoes records to stderr', function () {

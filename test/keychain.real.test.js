@@ -1,6 +1,6 @@
 'use strict';
 // REAL-keychain end-to-end test against a throwaway keychain. Opt-in only:
-// runs when CCSWITCH_REAL_KEYCHAIN=1 on macOS (a dedicated CI job sets it), so
+// runs when KEYFLIP_REAL_KEYCHAIN=1 on macOS (a dedicated CI job sets it), so
 // local `npm test` never touches any keychain.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -9,15 +9,15 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const KeychainStore = require('../src/stores/keychain');
 
-const ENABLED = process.platform === 'darwin' && process.env.CCSWITCH_REAL_KEYCHAIN === '1';
+const ENABLED = process.platform === 'darwin' && process.env.KEYFLIP_REAL_KEYCHAIN === '1';
 
 test('real keychain round-trip (throwaway keychain)', function (t) {
-  if (!ENABLED) return t.skip('set CCSWITCH_REAL_KEYCHAIN=1 on macOS to run');
-  const kcPath = path.join(os.tmpdir(), 'ccswitch-test-' + process.pid + '.keychain-db');
+  if (!ENABLED) return t.skip('set KEYFLIP_REAL_KEYCHAIN=1 on macOS to run');
+  const kcPath = path.join(os.tmpdir(), 'keyflip-test-' + process.pid + '.keychain-db');
   execFileSync('/usr/bin/security', ['create-keychain', '-p', 'testpw', kcPath]);
   try {
     execFileSync('/usr/bin/security', ['unlock-keychain', '-p', 'testpw', kcPath]);
-    const s = new KeychainStore({ account: 'ccswitch-test', keychainPath: kcPath });
+    const s = new KeychainStore({ account: 'keyflip-test', keychainPath: kcPath });
 
     // stdin/hex write path + read-back
     s.setProfile('e2e', '{"claudeAiOauth":{"accessToken":"secret-123"}}');

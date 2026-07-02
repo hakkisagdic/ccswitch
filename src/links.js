@@ -1,6 +1,6 @@
 'use strict';
 // Directory -> account mapping (adopted from claude-swap PR #71): link a repo
-// directory to an account once, then `ccswitch run` (no name) in that tree
+// directory to an account once, then `keyflip run` (no name) in that tree
 // launches the right account automatically. Stored in <configDir>/links.json.
 const fs = require('fs');
 const path = require('path');

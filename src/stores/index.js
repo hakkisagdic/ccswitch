@@ -7,7 +7,7 @@ const KeychainStore = require('./keychain');
 const FileStore = require('./file');
 
 // macOS store: live credential ALWAYS lives in the Keychain (Claude Code reads it
-// there first), but ccswitch's own profile backups learn to fall back to files
+// there first), but keyflip's own profile backups learn to fall back to files
 // when the keychain is locked/unavailable (SSH session, locked login keychain) —
 // so add/list/remove keep working and only the live swap fails loudly.
 class HybridStore {

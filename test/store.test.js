@@ -10,7 +10,7 @@ test('FileStore round-trips live and profile credentials', function () {
   const home = tmpdir();
   const store = new FileStore({
     credsFilePath: path.join(home, '.claude', '.credentials.json'),
-    profileCredDir: path.join(home, '.config', 'ccswitch', 'creds'),
+    profileCredDir: path.join(home, '.config', 'keyflip', 'creds'),
   });
   assert.strictEqual(store.getLive(), null);
   store.setLive('{"token":"LIVE"}');
@@ -37,7 +37,7 @@ test('createStore uses the file backend when a credentials file exists (even on 
   const credsFilePath = path.join(home, '.claude', '.credentials.json');
   fs.mkdirSync(path.dirname(credsFilePath), { recursive: true });
   fs.writeFileSync(credsFilePath, '{}');
-  const store = createStore({ platform: 'darwin', credsFilePath: credsFilePath, configDir: path.join(home, '.config', 'ccswitch'), account: 'me' });
+  const store = createStore({ platform: 'darwin', credsFilePath: credsFilePath, configDir: path.join(home, '.config', 'keyflip'), account: 'me' });
   assert.strictEqual(store.type, 'file');
 });
 
