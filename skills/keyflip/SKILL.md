@@ -56,6 +56,11 @@ CLI/desktop account, the extension's native-messaging bridge refuses to connect
 and flags a mismatch; `keyflip browser logout` clears it (reversible, quit the
 browser first) so the user can sign in as the right account.
 
+**Via MCP:** these are also tools — `keyflip_login` (add an account by browser
+sign-in), `keyflip_logout` (sign out of cli/browser surfaces), `keyflip_browser_status`
+(read the browser/extension account), `keyflip_browser_logout` (reset it). The
+mutating ones require `confirm: true`; `keyflip_login` opens a browser for the human.
+
 ## Read state (safe, no confirmation needed)
 
 ```bash

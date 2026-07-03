@@ -59,10 +59,77 @@ function cleanIsolatedKeychain(dir, opts) {
   try { opts.run('/usr/bin/security', ['delete-generic-password', '-s', isoKeychainService(dir)], undefined, { timeoutMs: 8000 }); } catch (e) { /* ignore */ }
 }
 
+// Run the OFFICIAL `claude auth login` in an isolated CLAUDE_CONFIG_DIR and save
+// the minted token as a keyflip profile. Pure mechanics (no printing) so both the
+// CLI and the MCP server can use it. opts: { email, name, useConsole, sso, stdio }.
+// Returns { status:'captured'|'refreshed', name, email }. Throws Error with a
+// `.code` ('claude-missing'|'login-failed'|'no-cred'|'mismatch'|'name-taken').
+function performLogin(ctx, opts) {
+  opts = opts || {};
+  const fs = require('fs'); const path = require('path'); const os = require('os');
+  const cp = require('child_process');
+  const exec = require('./exec');
+  const claude = require('./claude');
+  const profiles = require('./profiles');
+  const core = require('./core');
+
+  const isoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-login-'));
+  const env = Object.assign({}, process.env, { CLAUDE_CONFIG_DIR: isoDir });
+  try {
+    try { claude.writeConfig(path.join(isoDir, '.claude.json'), { hasCompletedOnboarding: true }); } catch (e) { /* best-effort */ }
+    const args = ['auth', 'login', opts.useConsole ? '--console' : '--claudeai'];
+    if (opts.sso) args.push('--sso');
+    if (opts.email) args.push('--email', opts.email);
+    const r = cp.spawnSync('claude', args, { stdio: opts.stdio || 'inherit', env: env });
+    if (r.error) { const e = new Error('could not run `claude auth login` (is Claude Code installed and on PATH?): ' + r.error.message); e.code = 'claude-missing'; throw e; }
+    if (typeof r.status === 'number' && r.status !== 0) { const e = new Error('the login did not complete (exit ' + r.status + ')'); e.code = 'login-failed'; throw e; }
+
+    const blob = readIsolatedCredential(isoDir, { platform: ctx.platform, run: exec.run });
+    if (!blob) { const e = new Error('login completed but the new credential could not be read from the isolated store'); e.code = 'no-cred'; throw e; }
+
+    let em = null, org = null;
+    const st = parseAuthStatus(exec.run('claude', ['auth', 'status'], undefined, { timeoutMs: 8000, env: env }).stdout);
+    if (st) { em = st.email || null; org = st.orgId || null; }
+
+    if (opts.email && em && em.toLowerCase() !== opts.email.toLowerCase()) {
+      const e = new Error('signed in as ' + em + ', not ' + opts.email + ' — the browser was already logged into claude.com as ' + em); e.code = 'mismatch'; e.actual = em; throw e;
+    }
+    let existing = null;
+    if (em) profiles.list(ctx.configDir).forEach(function (n) { if (!existing && (profiles.email(ctx.configDir, n) || '').toLowerCase() === em.toLowerCase()) existing = n; });
+    const finalName = existing || opts.name || core.uniqueName(ctx, profiles.sanitizeName(em || 'account'), em || '');
+    if (!existing && profiles.exists(ctx.configDir, finalName) && profiles.email(ctx.configDir, finalName) !== (em || '')) {
+      const e = new Error("profile '" + finalName + "' already exists for a different account — pass a name"); e.code = 'name-taken'; throw e;
+    }
+    ctx.store.setProfile(finalName, blob);
+    const oa = {}; if (org) oa.organizationUuid = org; if (em) oa.emailAddress = em;
+    profiles.write(ctx.configDir, { name: finalName, email: em || '', oauthAccount: oa, userID: '', savedAt: ctx.now(), viaLogin: true });
+    return { status: existing ? 'refreshed' : 'captured', name: finalName, email: em || null };
+  } finally {
+    cleanIsolatedKeychain(isoDir, { platform: ctx.platform, run: exec.run });
+    try { fs.rmSync(isoDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+  }
+}
+
+// Sign the Claude Code CLI out (official logout + clear the live credential +
+// strip the account from ~/.claude.json). Never touches saved keyflip profiles.
+function cliLogout(ctx) {
+  const exec = require('./exec');
+  const claude = require('./claude');
+  try { exec.run('claude', ['auth', 'logout'], undefined, { timeoutMs: 8000 }); } catch (e) { /* best-effort */ }
+  try { ctx.store.delLive(); } catch (e) { /* already gone */ }
+  try {
+    const c = claude.readConfig(ctx.claudeConfigPath);
+    if (c && (c.oauthAccount || c.userID)) { delete c.oauthAccount; delete c.userID; claude.writeConfig(ctx.claudeConfigPath, c); }
+  } catch (e) { /* ignore */ }
+  return true;
+}
+
 module.exports = {
   isoKeychainService: isoKeychainService,
   validBlob: validBlob,
   readIsolatedCredential: readIsolatedCredential,
   parseAuthStatus: parseAuthStatus,
   cleanIsolatedKeychain: cleanIsolatedKeychain,
+  performLogin: performLogin,
+  cliLogout: cliLogout,
 };

@@ -22,6 +22,9 @@ const doctor = require('./doctor');
 const backup = require('./backup');
 const history = require('./history');
 const proxy = require('./proxy');
+const browser = require('./browser');
+const loginmod = require('./login');
+const exec = require('./exec');
 
 // Mutating tools all gate on confirm:true — the agent must ask the user first.
 function needConfirm(args) {
@@ -323,6 +326,64 @@ const TOOLS = [
       needConfirm(args);
       if (args.action === 'start') { const r = proxy.start(ctx, { wire: !!args.wire, port: args.port }); return { started: !r.already, url: r.url, wired: r.wired, port: r.port }; }
       return proxy.stop(ctx);
+    },
+  },
+
+  // ---- account login (add) ----
+  {
+    name: 'keyflip_login', title: 'Sign in and capture a Claude account',
+    description: 'Add an account: sign in via the OFFICIAL browser flow in an ISOLATED config (the current login is NOT disturbed) and save the minted token as a keyflip profile. A HUMAN must approve in the browser that opens. The OAuth reuses the browser\'s current claude.ai session, so if the browser is signed into a different account this captures THAT and returns a "mismatch" error — clear it first with keyflip_browser_logout. Interactive + mutating — ask the user, then confirm=true. name/email are optional.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, email: { type: 'string' }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    run: async function (ctx, args) {
+      needConfirm(args);
+      try {
+        const res = loginmod.performLogin(ctx, { email: args.email, name: args.name, stdio: 'ignore' });
+        return { status: res.status, name: res.name, email: res.email };
+      } catch (e) { throw new Error(e.code === 'mismatch' ? (e.message + ' — clear the browser with keyflip_browser_logout, then retry') : e.message); }
+    },
+  },
+  {
+    name: 'keyflip_logout', title: 'Sign out of live surfaces',
+    description: 'Sign the machine OUT of the live Claude session on the selected surfaces — "cli" (Claude Code) and/or "browser" (claude.ai cookies, macOS). Saved keyflip profiles are KEPT (switch back anytime). Does NOT touch the desktop app. Mutating — ask the user, then confirm=true. surfaces defaults to ["cli"].',
+    inputSchema: { type: 'object', properties: { surfaces: { type: 'array', items: { type: 'string', enum: ['cli', 'browser'] } }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      const surfaces = Array.isArray(args.surfaces) && args.surfaces.length ? args.surfaces : ['cli'];
+      const out = [];
+      if (surfaces.indexOf('cli') !== -1) { loginmod.cliLogout(ctx); out.push('cli'); }
+      if (surfaces.indexOf('browser') !== -1 && ctx.platform === 'darwin') {
+        browser.installed(ctx.home).forEach(function (b) { const r = browser.clearClaudeCookies(b, {}); if (r.ok) out.push('browser:' + b.id); });
+      }
+      return { loggedOut: out };
+    },
+  },
+
+  // ---- browser session (Claude Chrome extension) ----
+  {
+    name: 'keyflip_browser_status', title: 'Browser claude.ai account (Chrome extension)',
+    description: 'macOS only. Which claude.ai account each Chromium browser (Chrome/Brave/Edge/Arc) is signed into, and whether it MATCHES the active CLI/desktop account. The Claude Chrome extension inherits the browser session, so a mismatch means its browser features cannot connect ("user mismatch"). Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) {
+      if (ctx.platform !== 'darwin') return { supported: false, reason: 'macOS-only' };
+      const st = loginmod.parseAuthStatus(exec.run('claude', ['auth', 'status'], undefined, { timeoutMs: 8000 }).stdout);
+      const activeOrg = st && st.orgId;
+      const browsers = browser.installed(ctx.home).map(function (b) {
+        const ck = browser.readClaudeCookies(b, {});
+        return { id: b.id, name: b.name, signedIn: !!ck, org: (ck && ck.org) || null, matchesActive: !!(ck && ck.org && activeOrg && ck.org === activeOrg) };
+      });
+      return { active: (st && st.email) || activeOrg || null, browsers: browsers };
+    },
+  },
+  {
+    name: 'keyflip_browser_logout', title: 'Clear the browser claude.ai session',
+    description: 'macOS only. Clears the claude.ai cookies from Chromium browsers so the user can sign in as the right account and the Claude extension reconnects. Backs up each Cookies DB (reversible) and REFUSES while the browser is running (the user must quit it first). Mutating — ask the user, then confirm=true. Optional browserId=chrome|brave|edge|arc.',
+    inputSchema: { type: 'object', properties: { browserId: { type: 'string' }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      if (ctx.platform !== 'darwin') throw new Error('browser logout is macOS-only');
+      const list = browser.installed(ctx.home).filter(function (b) { return !args.browserId || b.id === args.browserId; });
+      if (!list.length) throw new Error('no matching installed browser (chrome|brave|edge|arc)');
+      return { results: list.map(function (b) { const r = browser.clearClaudeCookies(b, {}); return { id: b.id, ok: !!r.ok, reason: r.reason || null, backup: r.backup || null }; }) };
     },
   },
 ];

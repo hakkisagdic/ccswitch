@@ -93,6 +93,27 @@ test('MCP lifecycle: initialize negotiates a supported protocol version and decl
   assert.deepStrictEqual(got[3].result, {});
 });
 
+test('MCP: login/logout/browser tools are exposed, gated, and structured', async function () {
+  const home = mkhome();
+  const got = await mcpSession(home, [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } } },
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+    { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'keyflip_browser_status', arguments: {} } },
+    { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'keyflip_logout', arguments: { confirm: false } } },
+  ], [1, 2, 3, 4]);
+  const names = got[2].result.tools.map(function (t) { return t.name; });
+  ['keyflip_login', 'keyflip_logout', 'keyflip_browser_status', 'keyflip_browser_logout'].forEach(function (n) {
+    assert.ok(names.indexOf(n) !== -1, 'missing MCP tool: ' + n);
+  });
+  // browser_status is read-only and returns structured content (macOS-gated content is fine)
+  assert.strictEqual(got[3].result.isError, false);
+  assert.ok(got[3].result.structuredContent);
+  // a mutating surface tool refuses without confirm
+  assert.strictEqual(got[4].result.isError, true);
+  assert.match(got[4].result.content[0].text, /confirm/i);
+});
+
 test('MCP tools: status/list read state; switch requires confirm and then switches', async function () {
   const home = mkhome();
   cliRun(home, ['add']);                                     // alice

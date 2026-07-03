@@ -1205,63 +1205,24 @@ async function cmdLogin(ctx, rest) {
     });
   }
 
-  const os = require('os');
-  const isoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-login-'));
-  const env = Object.assign({}, process.env, { CLAUDE_CONFIG_DIR: isoDir });
+  print(style.bold('keyflip login') + ' — sign in to a Claude account (your current login stays put).');
+  print('A browser will open. ' + (email ? 'Sign in as ' + style.bold(email) : 'Sign in to the account you want to add') +
+    ' and approve — then I capture it automatically.\n');
+
+  let res;
   try {
-    // Pre-seed so the login doesn't drop into first-run onboarding.
-    try { claude.writeConfig(path.join(isoDir, '.claude.json'), { hasCompletedOnboarding: true }); } catch (e) { /* best-effort */ }
-
-    print(style.bold('keyflip login') + ' — sign in to a Claude account (your current login stays put).');
-    print('A browser will open. ' + (email ? 'Sign in as ' + style.bold(email) : 'Sign in to the account you want to add') +
-      ' and approve — then I capture it automatically.\n');
-
-    const args = ['auth', 'login', useConsole ? '--console' : '--claudeai'];
-    if (sso) args.push('--sso');
-    if (email) args.push('--email', email);
-    const r = require('child_process').spawnSync('claude', args, { stdio: 'inherit', env: env });
-    if (r.error) return fail('could not run `claude auth login` (is Claude Code installed and on PATH?): ' + r.error.message);
-    if (r.status !== 0) return fail('the login did not complete (exit ' + r.status + ') — nothing was captured.');
-
-    const blob = loginmod.readIsolatedCredential(isoDir, { platform: ctx.platform, run: exec.run });
-    if (!blob) return fail('login completed but I could not read the new credential from the isolated store — nothing saved. (Please report this.)');
-
-    // Whose token did we actually get? The OAuth flow signs in as the BROWSER's
-    // current claude.com session — so read the real identity, don't trust the hint.
-    let em = null, org = null;
-    const st = loginmod.parseAuthStatus(exec.run('claude', ['auth', 'status'], undefined, { timeoutMs: 8000, env: env }).stdout);
-    if (st) { em = st.email || null; org = st.orgId || null; }
-
-    // Guard: the browser was signed into a different account than you asked for.
-    if (email && em && em.toLowerCase() !== email.toLowerCase()) {
-      return fail('Signed in as ' + em + ', not ' + email + '.\n' +
-        'Your browser is already logged into claude.com as ' + em + ', so the OAuth page approved that account.\n' +
-        "Fix: log out of claude.com in your browser (or click 'switch account' on the login page), then retry:\n" +
-        '  keyflip login ' + (name || (email.split('@')[0])) + ' --email ' + email);
+    res = loginmod.performLogin(ctx, { email: email, name: name, useConsole: useConsole, sso: sso, stdio: 'inherit' });
+  } catch (e) {
+    if (e.code === 'mismatch') {
+      return fail(e.message + '.\nFix: log out of claude.com in that browser (' + style.bold('keyflip browser logout') +
+        ", or 'switch account' on the login page), then retry:  keyflip login " + (name || (email ? email.split('@')[0] : '<name>')) + (email ? ' --email ' + email : '') + ' --fresh');
     }
-
-    // Already saved (by email)? Refresh its credentials in place — never a duplicate.
-    let existing = null;
-    if (em) profiles.list(ctx.configDir).forEach(function (n) {
-      if (!existing && (profiles.email(ctx.configDir, n) || '').toLowerCase() === em.toLowerCase()) existing = n;
-    });
-    const finalName = existing || name || core.uniqueName(ctx, profiles.sanitizeName(em || 'account'), em || '');
-    if (!existing && profiles.exists(ctx.configDir, finalName) && profiles.email(ctx.configDir, finalName) !== (em || '')) {
-      return fail("profile '" + finalName + "' already exists for a different account — pass a name: keyflip login <name> --email …");
-    }
-    ctx.store.setProfile(finalName, blob);
-    const oa = {};
-    if (org) oa.organizationUuid = org;
-    if (em) oa.emailAddress = em;
-    profiles.write(ctx.configDir, { name: finalName, email: em || '', oauthAccount: oa, userID: '', savedAt: ctx.now(), viaLogin: true });
-    logmod.log('login ' + (existing ? 'refreshed ' : 'captured ') + finalName);
-    print('\n' + style.ok('✅') + ' ' + (existing ? 'refreshed' : 'captured') + " '" + style.bold(finalName) + "'" + (em ? ' (' + em + ')' : '') +
-      ' — your current login is untouched. Switch with: ' + style.bold('keyflip ' + finalName));
-    jsonOut({ login: true, name: finalName, email: em || null, refreshed: !!existing });
-  } finally {
-    loginmod.cleanIsolatedKeychain(isoDir, { platform: ctx.platform, run: exec.run });
-    try { fs.rmSync(isoDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+    return fail(e.message + (e.code === 'no-cred' ? ' — nothing saved. (Please report this.)' : ''));
   }
+  logmod.log('login ' + res.status + ' ' + res.name);
+  print('\n' + style.ok('✅') + ' ' + res.status + " '" + style.bold(res.name) + "'" + (res.email ? ' (' + res.email + ')' : '') +
+    ' — your current login is untouched. Switch with: ' + style.bold('keyflip ' + res.name));
+  jsonOut({ login: true, name: res.name, email: res.email, refreshed: res.status === 'refreshed' });
 }
 
 // Capture whatever accounts are logged in RIGHT NOW (Claude Code CLI + desktop app)
@@ -1466,12 +1427,7 @@ async function logoutSurfaces(ctx, opts) {
   opts = opts || {};
   const out = [];
   if (opts.cli) {
-    try { exec.run('claude', ['auth', 'logout'], undefined, { timeoutMs: 8000 }); } catch (e) { /* best-effort */ }
-    try { ctx.store.delLive(); } catch (e) { /* already gone */ }
-    try {
-      const c = claude.readConfig(ctx.claudeConfigPath);
-      if (c && (c.oauthAccount || c.userID)) { delete c.oauthAccount; delete c.userID; claude.writeConfig(ctx.claudeConfigPath, c); }
-    } catch (e) { /* ignore */ }
+    loginmod.cliLogout(ctx);
     print('  ' + style.ok('✓') + ' signed out of Claude Code (CLI).'); out.push('cli');
   }
   if (opts.browser && ctx.platform === 'darwin') {
