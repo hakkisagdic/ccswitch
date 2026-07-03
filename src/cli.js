@@ -1613,13 +1613,38 @@ async function cmdList(ctx, rest) {
     infos = await usagemod.usageForProfiles(ctx, list.map(function (e) { return e.name; }),
       { liveFor: activeEntry ? activeEntry.name : null, recordHistory: true });
   }
+  // Which account is each browser's claude.ai session on? The Claude Chrome
+  // extension inherits that session, so this is the "browser (extension)" surface.
+  // Best-effort, macOS only.
+  const browserOrgs = {}; // org uuid -> [browser names]
+  let browsersPresent = 0;
+  if (ctx.platform === 'darwin') {
+    try {
+      const browser = require('./browser');
+      const inst = browser.installed(ctx.home);
+      browsersPresent = inst.length;
+      inst.forEach(function (b) {
+        const ck = browser.readClaudeCookies(b, {});
+        if (ck && ck.org) { (browserOrgs[ck.org] = browserOrgs[ck.org] || []).push(b.name); }
+      });
+    } catch (e) { /* best-effort */ }
+  }
+  function browserFor(name) {
+    const m = profiles.read(ctx.configDir, name) || {};
+    const org = m.oauthAccount && m.oauthAccount.organizationUuid;
+    return (org && browserOrgs[org]) ? browserOrgs[org] : null;
+  }
+
   if (JSON_MODE) {
     jsonOut({
       accounts: list.map(function (e) {
+        const web = browserFor(e.name);
         return {
           index: e.index, name: e.name, email: e.email || null,
           cliCaptured: capturedCliSafe(ctx, e.name),
           appCaptured: appauth.hasProfile(ctx, e.name),
+          browserSignedIn: !!web,
+          browsers: web || undefined,
           activeCli: !!e.active,
           activeApp: e.name === appActive,
           usage: infos ? ((infos[e.name] && infos[e.name].usage) || null) : undefined,
@@ -1634,25 +1659,47 @@ async function cmdList(ctx, rest) {
   print('Saved accounts (' + ctx.configDir + '):');
   if (!list.length) { print("  (none yet — log in in Claude, then run 'keyflip add')"); }
   else {
+    const anyBrowser = browsersPresent > 0;
     list.forEach(function (e) {
       const cli = capturedCliSafe(ctx, e.name);
       const app = appauth.hasProfile(ctx, e.name);
+      const web = browserFor(e.name);
       const now = [];
       if (e.active) now.push('CLI');
       if (e.name === appActive) now.push('app');
+      if (web) now.push('browser');
       let usageCol = '';
       if (infos) {
         const info = infos[e.name] || {};
         usageCol = '   [' + (info.status === 'ok' ? usagemod.fmt(info.usage) : (info.status || '?')) + ']';
       }
       print(' ' + (now.length ? '→' : ' ') + ' [' + e.index + '] ' + (e.email || e.name) +
-        '   [cli ' + (cli === null ? '?' : (cli ? '✓' : '—')) + ' | app ' + (app ? '✓' : '—') + ']' + usageCol +
+        '   [cli ' + (cli === null ? '?' : (cli ? '✓' : '—')) + ' | app ' + (app ? '✓' : '—') +
+        (anyBrowser ? ' | web ' + (web ? '✓' : '—') : '') + ']' + usageCol +
         (now.length ? '   ← active: ' + now.join(' + ') : ''));
     });
   }
   print('');
   print('Active — Claude Code: ' + (core.currentEmail(ctx) || 'not logged in') +
     (ctx.appDataDir ? '   ·   desktop app: ' + (appActive ? profiles.email(ctx.configDir, appActive) || appActive : 'unknown') : ''));
+  if (browsersPresent > 0) {
+    const orgs = Object.keys(browserOrgs);
+    if (!orgs.length) {
+      print('Browser (Claude extension): ' + style.dim('signed out of claude.ai'));
+    } else {
+      const orgLabel = function (o) {
+        let lbl = o.slice(0, 8) + '…';
+        profiles.list(ctx.configDir).forEach(function (n) { const m = profiles.read(ctx.configDir, n); if (m && m.oauthAccount && m.oauthAccount.organizationUuid === o) lbl = m.email || n; });
+        return lbl;
+      };
+      const labels = orgs.map(function (o) { return orgLabel(o) + ' (' + browserOrgs[o].join(', ') + ')'; });
+      const activeEntry = list.filter(function (e) { return e.active; })[0];
+      const activeOrg = activeEntry ? ((profiles.read(ctx.configDir, activeEntry.name) || {}).oauthAccount || {}).organizationUuid : null;
+      const mismatch = activeOrg && orgs.indexOf(activeOrg) === -1;
+      print('Browser (Claude extension): ' + labels.join('; ') +
+        (mismatch ? '   ' + style.warn('⚠ differs from the active account — the extension may not connect (fix: keyflip browser logout)') : ''));
+    }
+  }
 }
 
 async function main(argv) {
