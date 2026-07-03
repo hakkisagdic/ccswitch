@@ -133,7 +133,6 @@ keyflip export [dosya|-]      # hesapları dosyaya yedekle (SIR İÇERİR)
 keyflip import <dosya|->      # yedekten hesapları geri yükle (--force üzerine yazar)
 keyflip remove <ad|numara>    # kayıtlı hesabı sil
 keyflip reset [--soft]        # FABRİKA sıfırlaması: TÜM keyflip verisini SİL (--soft hesapları korur)
-keyflip clean [--logout]      # TÜM keyflip verisini sil; --logout her yerden çıkış da yapar
 keyflip uninstall [--purge]   # keyflip'i bu makineden kaldır (--purge veriyi de siler)
 keyflip upgrade               # keyflip'in kendisini güncelle (kurulum yöntemini algılar)
 ```
@@ -447,7 +446,6 @@ keyflip reset --logout       # (fabrika ya da --soft) ek olarak tüm canlı yüz
                              #   CLI + tarayıcı (claude.ai) + masaüstü uygulaması
 keyflip reset --logout --no-desktop   # ...ama masaüstü uygulamasını girişli bırak
                              #   (ör. şu an onu kullanıyorsan)
-keyflip clean --logout       # aynı silme + her yerden çıkış (uyumluluk için korundu)
 
 keyflip uninstall            # keyflip'i bu makineden kaldır, kayıtlı veriyi tut
 keyflip uninstall --purge    # ...ve kayıtlı veriyi + Keychain öğelerini de sil
@@ -455,7 +453,7 @@ keyflip uninstall --purge    # ...ve kayıtlı veriyi + Keychain öğelerini de 
 
 `uninstall`, keyflip'in nasıl kurulduğunu (`install.sh` düzeni ya da npm global)
 otomatik algılar ve doğru şeyleri kaldırır; canlı Claude oturumuna asla dokunmaz
-(çıkış da yapmak istiyorsan önce `keyflip clean --logout` çalıştır) ve bir kaynak
+(çıkış da yapmak istiyorsan önce `keyflip reset --logout` çalıştır) ve bir kaynak
 kopyasını (checkout) silmez. Kabuk betiği de hâlâ çalışır:
 
 ```bash

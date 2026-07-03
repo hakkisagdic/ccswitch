@@ -133,7 +133,6 @@ keyflip export [file|-]       # back up accounts to a file (CONTAINS SECRETS)
 keyflip import <file|->       # restore accounts from an export (--force overwrites)
 keyflip remove <name|number>  # delete a saved account
 keyflip reset [--soft]        # FACTORY reset: DELETE all keyflip data (--soft keeps accounts)
-keyflip clean [--logout]      # delete ALL keyflip data; --logout also signs out everywhere
 keyflip uninstall [--purge]   # remove keyflip from this machine (--purge also deletes data)
 keyflip upgrade               # update keyflip itself (detects how it was installed)
 ```
@@ -427,7 +426,6 @@ keyflip reset --logout       # (factory or --soft) ALSO sign OUT of every live s
                              #   CLI + browser (claude.ai) + desktop app
 keyflip reset --logout --no-desktop   # ...but leave the desktop app signed in (e.g.
                              #   when you're using it right now)
-keyflip clean --logout       # same wipe + sign out everywhere (kept for compatibility)
 
 keyflip uninstall            # remove keyflip from this machine, keep saved data
 keyflip uninstall --purge    # ...and delete saved data + Keychain items too
@@ -435,7 +433,7 @@ keyflip uninstall --purge    # ...and delete saved data + Keychain items too
 
 `uninstall` auto-detects how keyflip was installed (the `install.sh` layout or an
 npm global) and removes the right things; it never touches your live Claude login
-(run `keyflip clean --logout` first if you also want to sign out) or a source
+(run `keyflip reset --logout` first if you also want to sign out) or a source
 checkout. The shell script still works too:
 
 ```bash

@@ -1,15 +1,16 @@
 'use strict';
 // Planning helpers for `keyflip reset` and `keyflip uninstall`. Pure functions —
 // they compute WHAT to remove; the CLI does the confirmation and the actual I/O
-// (mirrors how cmdClean keeps its side effects in cli.js).
+// (mirrors how the reset/wipe path keeps its side effects in cli.js).
 const path = require('path');
 
-// Runtime/derived state under configDir that `reset` clears. It all regenerates
-// on next use, so wiping it returns keyflip to a clean working state WITHOUT
-// touching saved accounts. Everything NOT listed here is KEPT by reset:
-// accounts (<name>.json), providers/, app/ (captured desktop logins), backups/,
-// pre-sync-backups/, skill-backups/, sessions/, creds/, links.json,
-// mcp-registry.json, installed-skills.json, .migrations.json.
+// Runtime/derived state under configDir that `reset --soft` clears. It all
+// regenerates on next use, so wiping it returns keyflip to a clean working state
+// WITHOUT touching saved accounts. Everything NOT listed here is KEPT by
+// `reset --soft`: accounts (<name>.json), providers/, app/ (captured desktop
+// logins), backups/, pre-sync-backups/, skill-backups/, sessions/, creds/,
+// links.json, mcp-registry.json, installed-skills.json, .migrations.json.
+// (Plain `keyflip reset` deletes ALL of it — a factory reset.)
 const DERIVED = [
   'usage-history.jsonl',   // usage trend history
   'proxy.json',            // failover-proxy state (pid/port/wired)

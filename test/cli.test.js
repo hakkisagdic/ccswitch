@@ -103,11 +103,11 @@ test('capture-app without a name and no detectable identity gives a helpful erro
   assert.match(r.stderr, /add <name> --app/);
 });
 
-test('clean --force deletes all saved keyflip data', function () {
+test('reset --force (factory) deletes all saved keyflip data', function () {
   const home = setupHome();
   run(home, ['add']); // -> profile alice
   assert.match(run(home, ['list']).stdout, /alice@example\.com/);
-  const r = run(home, ['clean', '--force']);
+  const r = run(home, ['reset', '--force']);
   assert.strictEqual(r.status, 0, r.stderr);
   const list = run(home, ['list']).stdout;
   assert.match(list, /none yet/);          // saved profiles gone
@@ -115,7 +115,7 @@ test('clean --force deletes all saved keyflip data', function () {
   assert.match(list, /Claude Code: alice@example\.com/); // live login untouched
 });
 
-test('clean --logout --force signs out of Claude Code (and the desktop app on macOS)', function () {
+test('reset --logout --force signs out of Claude Code (and the desktop app on macOS)', function () {
   const home = setupHome(); // ~/.claude.json (alice) + ~/.claude/.credentials.json (live)
   run(home, ['add']);
   const appCfgDir = path.join(home, 'Library', 'Application Support', 'Claude');
@@ -123,7 +123,7 @@ test('clean --logout --force signs out of Claude Code (and the desktop app on ma
   const cfgFile = path.join(appCfgDir, 'config.json');
   fs.writeFileSync(cfgFile, JSON.stringify({ 'oauth:tokenCacheV2': 'TOK', keep: 1 }));
 
-  const r = run(home, ['clean', '--logout', '--force']);
+  const r = run(home, ['reset', '--logout', '--force']);
   assert.strictEqual(r.status, 0, r.stderr);
   // Claude Code signed out: live creds file removed, account cleared from ~/.claude.json
   assert.strictEqual(fs.existsSync(path.join(home, '.claude', '.credentials.json')), false);
@@ -137,17 +137,17 @@ test('clean --logout --force signs out of Claude Code (and the desktop app on ma
   }
 });
 
-test('plain clean --force does NOT sign out (live creds kept)', function () {
+test('plain reset --force does NOT sign out (live creds kept)', function () {
   const home = setupHome();
   run(home, ['add']);
-  run(home, ['clean', '--force']);
+  run(home, ['reset', '--force']);
   assert.ok(fs.existsSync(path.join(home, '.claude', '.credentials.json')), 'live creds untouched');
 });
 
-test('clean without --force in a non-interactive shell refuses', function () {
+test('reset without --force in a non-interactive shell refuses', function () {
   const home = setupHome();
   run(home, ['add']);
-  const r = run(home, ['clean']); // no TTY, no --force
+  const r = run(home, ['reset']); // no TTY, no --force
   assert.notStrictEqual(r.status, 0);
   assert.match(run(home, ['list']).stdout, /\[1\] alice@example\.com/); // still saved
 });

@@ -124,8 +124,6 @@ function usage() {
   print('  keyflip reset [--soft] [--logout [--no-desktop]]   FACTORY reset: DELETE all keyflip data');
   print('                                 (--soft keeps accounts, clears only runtime state;');
   print('                                 --logout signs out CLI+browser+desktop, --no-desktop keeps desktop)');
-  print('  keyflip clean [--logout]      delete ALL keyflip data; --logout also signs out of');
-  print('                                 Claude Code + the desktop app (asks to confirm)');
   print('  keyflip uninstall [--purge]   remove keyflip from this machine (auto-detects install;');
   print('                                 --purge also deletes saved data + Keychain items)');
   print('');
@@ -1420,7 +1418,7 @@ function wipeKeyflipData(ctx) {
 }
 
 // Sign the machine OUT of Claude across every surface selected in `opts`
-// (cli / browser / desktop). Shared by `reset --logout` and `clean --logout`.
+// (cli / browser / desktop). Shared by `reset --logout`.
 // Never wipes saved keyflip profiles — only clears the LIVE sessions. Returns the
 // surfaces actually signed out.
 async function logoutSurfaces(ctx, opts) {
@@ -1464,8 +1462,8 @@ async function cmdReset(ctx, rest) {
   logmod.log('reset invoked');
   const force = rest.indexOf('--force') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
   const logout = rest.indexOf('--logout') !== -1 || rest.indexOf('--signout') !== -1;
-  const noDesktop = rest.indexOf('--no-desktop') !== -1 || rest.indexOf('--keep-desktop') !== -1;
-  const soft = rest.indexOf('--soft') !== -1 || rest.indexOf('--keep-accounts') !== -1;
+  const noDesktop = rest.indexOf('--no-desktop') !== -1;
+  const soft = rest.indexOf('--soft') !== -1;
   const names = profiles.list(ctx.configDir);
   const proxyUp = proxy.isRunning(ctx);
 
@@ -1519,7 +1517,14 @@ async function cmdReset(ctx, rest) {
   }
   if (proxyUp) { try { await proxy.stop(ctx); print('  ✓ stopped the proxy.'); } catch (e) { /* ignore */ } }
   const n = wipeKeyflipData(ctx);
-  print('  ✓ deleted all keyflip data (' + n + ' account(s)).');
+  // Also sweep keyflip's stray artifacts OUTSIDE configDir (browser Cookies backups).
+  if (ctx.platform === 'darwin') {
+    try {
+      const browser = require('./browser');
+      browser.installed(ctx.home).forEach(function (b) { try { fs.rmSync(b.cookies + '.keyflip-bak', { force: true }); } catch (e) { /* none */ } });
+    } catch (e) { /* best-effort */ }
+  }
+  print('  ✓ deleted all keyflip data (' + n + ' account(s)) and swept stray backups.');
   let out = [];
   if (logout) out = await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force });
   print(style.ok('✅') + ' Factory reset complete.' + (logout ? ' Signed out of: ' + (out.join(', ') || 'nothing') + '.' : ''));
@@ -1528,7 +1533,7 @@ async function cmdReset(ctx, rest) {
 
 // `keyflip uninstall` — remove keyflip from this machine (npm-global or install.sh
 // layout, auto-detected). Keeps saved data unless --purge. Never touches the live
-// Claude login (use `clean --logout` first) or a source checkout.
+// Claude login (use `reset --logout` first) or a source checkout.
 async function cmdUninstall(ctx, rest) {
   logmod.log('uninstall invoked');
   const force = rest.indexOf('--force') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
@@ -1552,7 +1557,7 @@ async function cmdUninstall(ctx, rest) {
   } else {
     print('  • keep saved keyflip data (accounts/providers/backups) — add --purge to delete it too');
   }
-  print('Not touched: your Claude login (run `keyflip clean --logout` first to sign out), ~/.claude/projects.');
+  print('Not touched: your Claude login (run `keyflip reset --logout` first to sign out), ~/.claude/projects.');
   if (method === 'dev' && !purge) { print('\nNothing to do (source checkout, no --purge).'); jsonOut({ uninstalled: false, method: method, purged: false }); return; }
 
   if (!force) {
@@ -1578,50 +1583,6 @@ async function cmdUninstall(ctx, rest) {
 
   print(style.ok('✅') + ' keyflip uninstalled.' + (purge ? '' : ' (Saved data kept — re-run with --purge to remove it.)'));
   jsonOut({ uninstalled: true, method: method, purged: purge });
-}
-
-async function cmdClean(ctx, rest) {
-  logmod.log("clean invoked");
-  const force = rest.indexOf('--force') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
-  const logout = rest.indexOf('--logout') !== -1 || rest.indexOf('--signout') !== -1 || rest.indexOf('--all') !== -1;
-  const names = profiles.list(ctx.configDir);
-  let appCount = 0, backupCount = 0;
-  try { appCount = fs.readdirSync(path.join(ctx.configDir, 'app')).length; } catch (e) { /* none */ }
-  try { backupCount = fs.readdirSync(path.join(ctx.configDir, 'backups')).length; } catch (e) { /* none */ }
-  const hasSaved = names.length || appCount || backupCount;
-
-  if (!hasSaved && !logout) { print('Nothing to clean — keyflip has no saved data.'); return; }
-
-  const managesApp = !!ctx.appDataDir;
-  print('This will:');
-  if (hasSaved) {
-    print("  • delete keyflip's saved data — accounts: " + (names.length ? names.join(', ') : 'none') +
-      '; captured desktop logins: ' + appCount + '; backups: ' + backupCount + '; Keychain keyflip:*');
-  }
-  if (logout) {
-    print('  • SIGN OUT of Claude Code (CLI)' + (managesApp ? ' AND the Claude desktop app' : '') + ' — you will log in again next time');
-    if (managesApp && appctl.isClaudeRunning(ctx.platform) && appctl.canManageApp(ctx.platform)) {
-      print('  • CLOSE and reopen the desktop app (this window will close if you run it from inside Claude)');
-    }
-  }
-  print('Not affected: your chats/sessions in ~/.claude/projects.');
-
-  if (!force) {
-    if (!process.stdin.isTTY) return fail('Re-run with --force to confirm' + (logout ? ' the sign-out.' : '.'));
-    const ok = await confirm('\nProceed? [y/N] ');
-    if (!ok) { print('Cancelled — nothing was changed.'); return; }
-  }
-
-  if (hasSaved) {
-    wipeKeyflipData(ctx);
-    print('  ✓ keyflip saved data removed.');
-  }
-
-  if (logout) {
-    const noDesktop = rest.indexOf('--no-desktop') !== -1 || rest.indexOf('--keep-desktop') !== -1;
-    await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force });
-  }
-  print('✅ Done.');
 }
 
 async function cmdList(ctx, rest) {
@@ -1743,7 +1704,7 @@ async function main(argv) {
   // Skip the passive update fetch for machine/interactive/long-lived commands: it
   // would corrupt the MCP stdio stream, delay `run`/`mcp` exit on a slow network,
   // or print a stray line during a destructive/JSON op.
-  const NO_NOTICE = ['menu', 'upgrade', 'clean', 'reset', 'uninstall', 'setup', 'onboard', 'login', 'mcp', 'run', 'autoswitch', 'install-skill'];
+  const NO_NOTICE = ['menu', 'upgrade', 'reset', 'uninstall', 'setup', 'onboard', 'login', 'mcp', 'run', 'autoswitch', 'install-skill'];
   const skipNotice = JSON_MODE || cmd === undefined || NO_NOTICE.indexOf(cmd) !== -1;
   if (!skipNotice) { try { await update.maybeNotify(ctx, VERSION); } catch (e) { /* ignore */ } }
 }
@@ -1840,8 +1801,6 @@ async function dispatch(ctx, cmd, rest) {
         return withLock(ctx, function () { return cmdImport(ctx, rest); });
       case 'upgrade':
         return cmdUpgrade(ctx);
-      case 'clean':
-        return withLock(ctx, function () { return cmdClean(ctx, rest); });
       case 'reset':
         return withLock(ctx, function () { return cmdReset(ctx, rest); });
       case 'uninstall':
