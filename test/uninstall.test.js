@@ -16,6 +16,10 @@ const BIN = path.join(__dirname, '..', 'bin', 'keyflip.js');
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-uninst-')); }
 
+// keyflip's default config dir differs by OS (XDG vs %APPDATA%); pin it explicitly
+// so the tests read/write the same place everywhere, including Windows CI.
+function cfgOf(home) { return path.join(home, 'kfcfg'); }
+
 function run(home, args, extraEnv) {
   return require('child_process').spawnSync(process.execPath, [BIN].concat(args), {
     encoding: 'utf8',
@@ -24,6 +28,7 @@ function run(home, args, extraEnv) {
       USERPROFILE: home,
       XDG_CONFIG_HOME: path.join(home, '.config'),
       APPDATA: path.join(home, 'AppData', 'Roaming'),
+      KEYFLIP_CONFIG_DIR: cfgOf(home),
       KEYFLIP_TEST_CLAUDE: 'stopped',
     }, extraEnv || {}),
   });
@@ -96,12 +101,14 @@ test('installerArtifacts honors KEYFLIP_* env overrides and the removal loop cle
 });
 
 test('derivedStatePaths are all under configDir and name the runtime files', function () {
-  const paths = uninstall.derivedStatePaths({ configDir: '/cfg' });
+  const cfg = path.join(os.tmpdir(), 'kf-cfg'); // OS-native separators
+  const paths = uninstall.derivedStatePaths({ configDir: cfg });
   const names = paths.map(function (p) { return p.name; });
   ['usage-history.jsonl', 'proxy.json', 'breakers.json', 'events.jsonl', 'logs'].forEach(function (n) {
     assert.ok(names.indexOf(n) !== -1, 'expected ' + n);
   });
-  paths.forEach(function (p) { assert.ok(p.path.indexOf('/cfg') === 0); });
+  // each entry is a direct child of configDir (OS-agnostic: compare via dirname)
+  paths.forEach(function (p) { assert.strictEqual(path.dirname(p.path), cfg); });
   // never touches account/provider/backup data
   assert.ok(names.indexOf('providers') === -1);
   assert.ok(names.indexOf('backups') === -1);
@@ -110,7 +117,7 @@ test('derivedStatePaths are all under configDir and name the runtime files', fun
 // ---- integration: reset keeps accounts, clears runtime state -----------------
 
 function seed(home) {
-  const cfg = path.join(home, '.config', 'keyflip');
+  const cfg = cfgOf(home); // must match run()'s KEYFLIP_CONFIG_DIR
   fs.mkdirSync(path.join(cfg, 'logs'), { recursive: true });
   fs.mkdirSync(path.join(cfg, 'providers'), { recursive: true });
   fs.mkdirSync(path.join(cfg, 'backups'), { recursive: true });
