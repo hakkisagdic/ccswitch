@@ -508,3 +508,24 @@ E4 settings store should land before E5 so the TUI edits a real config.
   all require explicit consent, always.
 - **Docs stay in lockstep:** any shipped item updates README.md + README.tr.md +
   SKILL.md + MCP setup text together.
+
+---
+
+## E6 — Onboarding & surface-sync hardening (the 8 gaps)
+
+Captured from live onboarding. All needed; phased because several need
+Windows/enterprise devices to validate.
+
+| # | Gap | Plan | Effort |
+|---|---|---|---|
+| **1** | **Browser sync on SWITCH.** `keyflip <name>` aligns CLI (+desktop) but leaves the browser/extension on the old account → "user mismatch". | On switch, sync the browser too: snapshot each account's claude.ai cookies at capture, restore the target's on switch (quit → write → reopen); robust fallback = quit+clear so the next claude.ai visit re-logs-in as the active account. Backups + closed-browser guard. | high (fragile: cookie write, app-bound v20) |
+| **2** | **Windows / Linux onboard.** Browser+desktop steps are macOS-only. | Windows: desktop capture works; add DPAPI cookie decrypt for the browser. Linux: browser via libsecret; no desktop app. | high (needs devices) |
+| **3** | **`consolidate` needs the app closed.** Chats don't sync while Claude Desktop is open. | At end of onboard (and on switch), offer to quit the app → consolidate → reopen. | medium |
+| **4** | **Sync isn't continuous.** New chats under B don't appear under A until re-consolidated. | Re-consolidate on every switch; optionally a `keyflip consolidate --watch`. | medium |
+| **5** | **Desktop account "unknown".** captureApp fails when the app's account can't be identified. | Harden detectAppAccount (more signals: config.json, token store, org uuid); clearer errors. | medium |
+| **6** | **Provider (API-key) accounts in onboard.** onboard only does OAuth subs. | Add an onboard branch: "add a provider/API-key account?" → `provider add` inline. | low |
+| **7** | **Enterprise / SSO + 2FA sign-in.** `--sso` exists but untested end-to-end. | Validate the `claude auth login --sso` path through onboard; handle org-picker. | medium (needs an SSO org) |
+| **8** | **macOS desktop↔CLI `~/.claude` tug-of-war.** The running desktop app can rewrite the CLI credential after a switch. | Detect + warn; optionally pause/close the app during a CLI switch; document. | medium |
+
+Order: **#1** (biggest value) → #3/#4 (sync continuity) → #5 → #6 → #2/#7/#8
+(device-gated).
