@@ -1359,14 +1359,22 @@ async function cmdOnboard(ctx, rest) {
       const ans = await ask('\n' + style.bold(count === 0 ? 'Add your first account' : 'Add another account') + '? [Enter = open the sign-in, d = done] ');
       if (isDone(ans)) { if (count > 0) break; print('Sign in to add at least one account (or Ctrl-C to quit).'); continue; }
 
-      // Fresh browser session so the sign-in is genuinely the account you pick.
-      if (ctx.platform === 'darwin') {
+      // Before each account AFTER the first: sign the browser OUT of the previous
+      // account (quit it + clear its claude.ai session) so the next sign-in is a
+      // fresh login — no manual "switch account" on the page.
+      if (count > 0 && ctx.platform === 'darwin') {
         try {
           const browser = require('./browser');
-          browser.installed(ctx.home).forEach(function (b) {
-            const cr = browser.clearClaudeCookies(b, {});
-            if (cr.reason === 'browser-running') print(style.warn('  ⚠️') + ' ' + b.name + ' is open — use "switch account" on the sign-in page (or quit it for a clean slate).');
-          });
+          const napMs = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+          let did = false;
+          const list = browser.installed(ctx.home);
+          for (let i = 0; i < list.length; i++) {
+            const b = list[i];
+            if (browser.isRunning(b)) { browser.quit(b, exec.run); for (let t = 0; t < 24 && browser.isRunning(b); t++) { await napMs(250); } }
+            const cr = browser.clearClaudeCookies(b, { force: true });
+            if (cr.ok) did = true;
+          }
+          if (did) print('  ' + style.dim('· signed the browser out of the previous account — the next sign-in is fresh.'));
         } catch (e) { /* best-effort */ }
       }
 
