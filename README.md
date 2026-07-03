@@ -108,7 +108,9 @@ If Claude / Claude Code is open, keyflip first asks **“Claude will be closed t
 ```bash
 keyflip                       # interactive menu (↑/↓ + Enter)
 keyflip setup                 # guided wizard: log into each account, auto-captured for you
+keyflip login [name] [--email x]   # sign in via the official browser flow, isolated + captured
 keyflip add [name] [--app]    # save the logged-in account(s) — CLI + desktop app
+keyflip browser [status|logout]    # check/reset the browser claude.ai account (Chrome extension)
 keyflip <name|number>         # switch to that account (asks before closing Claude)
 keyflip <name> --restart      # ...close & reopen Claude without asking
 keyflip <name> --force        # ...swap without closing Claude (restart it yourself)

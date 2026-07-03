@@ -31,6 +31,8 @@ const sessions = require('./sessions');
 const mcp = require('./mcp');
 const proxy = require('./proxy');
 const uninstallmod = require('./uninstall');
+const exec = require('./exec');
+const loginmod = require('./login');
 const style = require('./style').make(process.stdout);
 
 // Serialize every mutation across processes (double-fired alias, launcher app
@@ -72,6 +74,8 @@ function usage() {
   print('  keyflip                       interactive menu (↑/↓ + Enter)');
   print('  keyflip setup                 guided wizard: log into each account, keyflip captures');
   print('                                 them for you automatically (the easy way to add several)');
+  print('  keyflip login [name] [--email x]   sign in via the official browser flow and capture it');
+  print('                                 (isolated — your current login is NOT disturbed)');
   print('  keyflip add [name] [--app]    save the account(s) you are logged into — Claude Code');
   print('                                 AND the desktop app, auto-detected. Once per account.');
   print('                                 (--app: desktop app only; name it if undetected)');
@@ -96,6 +100,8 @@ function usage() {
   print('  keyflip resume <n|id> [--run]  resume a past session in its original directory');
   print('  keyflip cowork [--search T]    browse Claude desktop Cowork sessions (all accounts)');
   print('  keyflip chat [--limit N | get <id>]   read claude.ai Chat of the active account (experimental)');
+  print('  keyflip browser [status|logout]   check/reset the BROWSER claude.ai account so the Claude');
+  print('                                 Chrome extension connects (it inherits the browser session)');
   print('  keyflip skill add <owner/repo|./dir|file.tgz>   install a skill; also: skill list|remove');
   print('  keyflip proxy start [--wire] | stop | status | stats');
   print('                                 command-started failover proxy (429/5xx → next account)');
@@ -1152,6 +1158,81 @@ async function cmdAdd(ctx, rest) {
   if (anyIncomplete) print("Tip: 'keyflip list' shows what each account has captured ([cli|app]).");
 }
 
+// `keyflip login [name] [--email x] [--console] [--sso]` — sign in to an account
+// via the OFFICIAL `claude auth login`, in an ISOLATED CLAUDE_CONFIG_DIR so the
+// user's real login is never disturbed, then capture the freshly-minted token as
+// a keyflip profile. The only human step is approving in the browser.
+async function cmdLogin(ctx, rest) {
+  logmod.log('login invoked');
+  if (JSON_MODE) return fail('login is interactive (opens a browser) — do not run it with --json');
+  const ei = rest.indexOf('--email');
+  const email = ei !== -1 ? rest[ei + 1] : null;
+  const useConsole = rest.indexOf('--console') !== -1;
+  const sso = rest.indexOf('--sso') !== -1;
+  const emailValIdx = ei !== -1 ? ei + 1 : -1;
+  const name = rest.filter(function (a, i) { return a.indexOf('-') !== 0 && i !== emailValIdx; })[0] || null;
+  if (name && !profiles.isValidName(name)) return fail("invalid profile name: '" + name + "' (allowed: A-Z a-z 0-9 . _ -)");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("'" + email + "' is not a valid email address");
+
+  const os = require('os');
+  const isoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-login-'));
+  const env = Object.assign({}, process.env, { CLAUDE_CONFIG_DIR: isoDir });
+  try {
+    // Pre-seed so the login doesn't drop into first-run onboarding.
+    try { claude.writeConfig(path.join(isoDir, '.claude.json'), { hasCompletedOnboarding: true }); } catch (e) { /* best-effort */ }
+
+    print(style.bold('keyflip login') + ' — sign in to a Claude account (your current login stays put).');
+    print('A browser will open. ' + (email ? 'Sign in as ' + style.bold(email) : 'Sign in to the account you want to add') +
+      ' and approve — then I capture it automatically.\n');
+
+    const args = ['auth', 'login', useConsole ? '--console' : '--claudeai'];
+    if (sso) args.push('--sso');
+    if (email) args.push('--email', email);
+    const r = require('child_process').spawnSync('claude', args, { stdio: 'inherit', env: env });
+    if (r.error) return fail('could not run `claude auth login` (is Claude Code installed and on PATH?): ' + r.error.message);
+    if (r.status !== 0) return fail('the login did not complete (exit ' + r.status + ') — nothing was captured.');
+
+    const blob = loginmod.readIsolatedCredential(isoDir, { platform: ctx.platform, run: exec.run });
+    if (!blob) return fail('login completed but I could not read the new credential from the isolated store — nothing saved. (Please report this.)');
+
+    // Whose token did we actually get? The OAuth flow signs in as the BROWSER's
+    // current claude.com session — so read the real identity, don't trust the hint.
+    let em = null, org = null;
+    const st = loginmod.parseAuthStatus(exec.run('claude', ['auth', 'status'], undefined, { timeoutMs: 8000, env: env }).stdout);
+    if (st) { em = st.email || null; org = st.orgId || null; }
+
+    // Guard: the browser was signed into a different account than you asked for.
+    if (email && em && em.toLowerCase() !== email.toLowerCase()) {
+      return fail('Signed in as ' + em + ', not ' + email + '.\n' +
+        'Your browser is already logged into claude.com as ' + em + ', so the OAuth page approved that account.\n' +
+        "Fix: log out of claude.com in your browser (or click 'switch account' on the login page), then retry:\n" +
+        '  keyflip login ' + (name || (email.split('@')[0])) + ' --email ' + email);
+    }
+
+    // Already saved (by email)? Refresh its credentials in place — never a duplicate.
+    let existing = null;
+    if (em) profiles.list(ctx.configDir).forEach(function (n) {
+      if (!existing && (profiles.email(ctx.configDir, n) || '').toLowerCase() === em.toLowerCase()) existing = n;
+    });
+    const finalName = existing || name || core.uniqueName(ctx, profiles.sanitizeName(em || 'account'), em || '');
+    if (!existing && profiles.exists(ctx.configDir, finalName) && profiles.email(ctx.configDir, finalName) !== (em || '')) {
+      return fail("profile '" + finalName + "' already exists for a different account — pass a name: keyflip login <name> --email …");
+    }
+    ctx.store.setProfile(finalName, blob);
+    const oa = {};
+    if (org) oa.organizationUuid = org;
+    if (em) oa.emailAddress = em;
+    profiles.write(ctx.configDir, { name: finalName, email: em || '', oauthAccount: oa, userID: '', savedAt: ctx.now(), viaLogin: true });
+    logmod.log('login ' + (existing ? 'refreshed ' : 'captured ') + finalName);
+    print('\n' + style.ok('✅') + ' ' + (existing ? 'refreshed' : 'captured') + " '" + style.bold(finalName) + "'" + (em ? ' (' + em + ')' : '') +
+      ' — your current login is untouched. Switch with: ' + style.bold('keyflip ' + finalName));
+    jsonOut({ login: true, name: finalName, email: em || null, refreshed: !!existing });
+  } finally {
+    loginmod.cleanIsolatedKeychain(isoDir, { platform: ctx.platform, run: exec.run });
+    try { fs.rmSync(isoDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+  }
+}
+
 // Capture whatever accounts are logged in RIGHT NOW (Claude Code CLI + desktop app)
 // that aren't already saved. Mutates `captured` (a Set of lowercased emails) and
 // returns the freshly-saved ones: [{ name, email, surface }].
@@ -1255,6 +1336,71 @@ async function cmdSetup(ctx, rest) {
   print('\n' + style.ok('✅') + ' Done — ' + style.bold(String(total)) + ' account(s) saved.');
   print('Switch anytime:  ' + style.bold('keyflip') + ' (menu) or ' + style.bold('keyflip <name>') + '.   See all:  ' + style.bold('keyflip list --usage'));
   jsonOut({ setup: true, saved: total });
+}
+
+// `keyflip browser [status|logout]` — Phase 2/3: see and reset the BROWSER's
+// claude.ai session, which the Claude Chrome extension inherits. A mismatch
+// between the browser account and the active CLI/desktop account is exactly why
+// the "Claude browser" extension refuses to connect.
+async function cmdBrowser(ctx, rest) {
+  logmod.log('browser invoked');
+  const browser = require('./browser');
+  if (ctx.platform !== 'darwin') return fail('browser session management is macOS-only for now (cookie decryption differs on Windows/Linux).');
+  const sub = rest[0] && rest[0].indexOf('-') !== 0 ? rest[0] : 'status';
+  const bi = rest.indexOf('--browser');
+  const only = bi !== -1 ? rest[bi + 1] : null;
+  const force = rest.indexOf('--force') !== -1 || rest.indexOf('-y') !== -1;
+  const list = browser.installed(ctx.home).filter(function (b) { return !only || b.id === only; });
+  if (!list.length) return fail(only ? "no installed browser with id '" + only + "' (chrome|brave|edge|arc)" : 'no supported Chromium browser found (Chrome/Brave/Edge/Arc).');
+
+  // The account the native-messaging host (and thus the extension) must match.
+  let activeOrg = null, activeLabel = null;
+  const st = loginmod.parseAuthStatus(exec.run('claude', ['auth', 'status'], undefined, { timeoutMs: 8000 }).stdout);
+  if (st) { activeOrg = st.orgId; activeLabel = st.email; }
+  function labelForOrg(org) {
+    if (!org) return null;
+    let lbl = null;
+    profiles.list(ctx.configDir).forEach(function (n) { const m = profiles.read(ctx.configDir, n); if (m && m.oauthAccount && m.oauthAccount.organizationUuid === org) lbl = m.email || n; });
+    return lbl;
+  }
+
+  if (sub === 'status') {
+    print('Active account (CLI/desktop, what the extension must match): ' + style.bold(activeLabel || activeOrg || 'unknown'));
+    let anyMismatch = false;
+    list.forEach(function (b) {
+      const ck = browser.readClaudeCookies(b, {});
+      if (!ck) { print('  ' + b.name + ': ' + style.dim('not signed into claude.ai (or cookies unreadable — app-bound encryption?)')); return; }
+      const lbl = labelForOrg(ck.org) || (ck.org ? ck.org.slice(0, 8) + '…' : 'unknown');
+      const match = ck.org && activeOrg && ck.org === activeOrg;
+      if (!match) anyMismatch = true;
+      print('  ' + b.name + ': claude.ai = ' + style.bold(lbl) + '  ' +
+        (match ? style.ok('✓ matches active') : style.warn('⚠ MISMATCH — the Claude browser extension will not connect')));
+    });
+    if (anyMismatch) print('\nFix: ' + style.bold('keyflip browser logout') + ' (clears the browser claude.ai session), then open claude.ai and sign in as ' + (activeLabel || 'the active account') + '.');
+    jsonOut({ active: activeLabel || activeOrg, browsers: list.map(function (b) { const ck = browser.readClaudeCookies(b, {}); return { id: b.id, org: ck && ck.org, match: !!(ck && ck.org && ck.org === activeOrg) }; }) });
+    return;
+  }
+
+  if (sub === 'logout') {
+    print('This clears the claude.ai session from: ' + list.map(function (b) { return b.name; }).join(', ') +
+      '  (a backup of each Cookies DB is kept; other sites stay signed in).');
+    const running = list.filter(function (b) { return browser.isRunning(b); });
+    if (running.length) print(style.warn('⚠️') + ' quit ' + running.map(function (b) { return b.name; }).join(', ') + ' first — the Cookies DB is locked while the browser is open' + (force ? ' (--force set: trying anyway).' : '.'));
+    if (!force) {
+      if (!process.stdin.isTTY) return fail('re-run with --force to confirm (and quit the browser first).');
+      const ok = await confirm('Proceed? [y/N] ');
+      if (!ok) { print('Cancelled.'); return; }
+    }
+    list.forEach(function (b) {
+      const r = browser.clearClaudeCookies(b, { force: force });
+      if (r.ok) print('  ' + style.ok('✅') + ' ' + b.name + ': claude.ai session cleared (backup: ' + r.backup + ').');
+      else if (r.reason === 'browser-running') print('  ' + style.warn('⏭') + ' ' + b.name + ': still running — skipped (quit it, or --force).');
+      else print('  ' + style.err('✗') + ' ' + b.name + ': ' + r.reason + (r.detail ? ' (' + r.detail + ')' : ''));
+    });
+    print('\nNow open claude.ai in that browser and sign in as ' + style.bold(activeLabel || 'your active account') + ' — the extension will reconnect.');
+    return;
+  }
+  return fail('usage: keyflip browser [status|logout] [--browser chrome|brave|edge|arc] [--force]');
 }
 
 function consolidateAndReport(ctx) {
@@ -1514,7 +1660,7 @@ async function main(argv) {
   // Skip the passive update fetch for machine/interactive/long-lived commands: it
   // would corrupt the MCP stdio stream, delay `run`/`mcp` exit on a slow network,
   // or print a stray line during a destructive/JSON op.
-  const NO_NOTICE = ['menu', 'upgrade', 'clean', 'reset', 'uninstall', 'setup', 'onboard', 'mcp', 'run', 'autoswitch', 'install-skill'];
+  const NO_NOTICE = ['menu', 'upgrade', 'clean', 'reset', 'uninstall', 'setup', 'onboard', 'login', 'mcp', 'run', 'autoswitch', 'install-skill'];
   const skipNotice = JSON_MODE || cmd === undefined || NO_NOTICE.indexOf(cmd) !== -1;
   if (!skipNotice) { try { await update.maybeNotify(ctx, VERSION); } catch (e) { /* ignore */ } }
 }
@@ -1532,6 +1678,8 @@ async function dispatch(ctx, cmd, rest) {
       case 'setup':
       case 'onboard':
         return withLock(ctx, function () { return cmdSetup(ctx, rest); });
+      case 'login':
+        return withLock(ctx, function () { return cmdLogin(ctx, rest); });
       case 'list':
         return cmdList(ctx, rest);
       case 'status':
@@ -1585,6 +1733,8 @@ async function dispatch(ctx, cmd, rest) {
         return cmdCowork(ctx, rest);
       case 'chat':
         return cmdChat(ctx, rest);
+      case 'browser':
+        return cmdBrowser(ctx, rest);
       case 'skill':
         return cmdSkill(ctx, rest);
       case 'proxy':

@@ -108,7 +108,9 @@ Claude / Claude Code açıksa keyflip önce **"Geçiş için Claude kapatılacak
 ```bash
 keyflip                       # etkileşimli menü (↑/↓ + Enter)
 keyflip setup                 # yönlendirmeli sihirbaz: her hesaba giriş yap, otomatik yakalanır
+keyflip login [ad] [--email x]     # resmi tarayıcı akışıyla giriş yap, izole + yakala
 keyflip add [ad] [--app]      # girişli hesap(lar)ı kaydet — CLI + masaüstü uygulaması
+keyflip browser [status|logout]    # tarayıcı claude.ai hesabını kontrol/sıfırla (Chrome uzantısı)
 keyflip <ad|numara>           # o hesaba geç (Claude'u kapatmadan önce sorar)
 keyflip <ad> --restart        # ...sormadan Claude'u kapatıp yeniden açar
 keyflip <ad> --force          # ...Claude'u kapatmadan takas eder (kendiniz yeniden başlatın)

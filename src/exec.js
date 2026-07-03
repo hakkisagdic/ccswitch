@@ -9,6 +9,7 @@ function run(cmd, args, input, opts) {
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
     timeout: opts.timeoutMs,
+    env: opts.env, // undefined => inherit process.env
   });
   return {
     code: typeof res.status === 'number' ? res.status : 1,

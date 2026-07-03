@@ -42,6 +42,19 @@ login and stores it. Two ways:
 - **`keyflip add [name]`** — captures whatever is logged in right now (one account).
   Scriptable. `--app` = desktop app only. `--token <file|->` imports a raw
   credential (secrets via file/stdin, never argv).
+- **`keyflip login [name] --email <x>`** — signs in via the OFFICIAL `claude auth
+  login` in an ISOLATED config dir (the user's current login is NOT disturbed) and
+  captures the minted token. The only human step is approving in the browser. Note:
+  OAuth uses the browser's current claude.ai session, so if the browser is signed
+  into a different account, keyflip captures THAT and warns (mismatch) — the user
+  must sign the browser into the target account first (see `keyflip browser`).
+
+**Browser / the Claude Chrome extension (macOS):** the extension has no login of
+its own — it inherits the browser's claude.ai session. If that != the active
+CLI/desktop account, the extension's native-messaging bridge refuses to connect
+("user mismatch"). `keyflip browser status` shows the browser's claude.ai account
+and flags a mismatch; `keyflip browser logout` clears it (reversible, quit the
+browser first) so the user can sign in as the right account.
 
 ## Read state (safe, no confirmation needed)
 
