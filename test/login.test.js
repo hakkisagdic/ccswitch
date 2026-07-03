@@ -59,3 +59,10 @@ test('`keyflip login` refuses in --json mode (interactive/browser)', function ()
   assert.notStrictEqual(r.status, 0);
   assert.match(r.stdout + r.stderr, /interactive|browser/);
 });
+
+test('extractCode pulls the OAuth code from a bare code or a redirect URL', function () {
+  assert.strictEqual(login.extractCode('ABC123'), 'ABC123');
+  assert.strictEqual(login.extractCode('  spaced-code  '), 'spaced-code');
+  assert.strictEqual(login.extractCode('https://platform.claude.com/oauth/code/callback?code=XYZ%2F789&state=s'), 'XYZ/789');
+  assert.strictEqual(login.extractCode('https://x/cb?state=s&code=CODE9&foo=1'), 'CODE9');
+});

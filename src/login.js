@@ -83,31 +83,84 @@ function performLogin(ctx, opts) {
     const r = cp.spawnSync('claude', args, { stdio: opts.stdio || 'inherit', env: env });
     if (r.error) { const e = new Error('could not run `claude auth login` (is Claude Code installed and on PATH?): ' + r.error.message); e.code = 'claude-missing'; throw e; }
     if (typeof r.status === 'number' && r.status !== 0) { const e = new Error('the login did not complete (exit ' + r.status + ')'); e.code = 'login-failed'; throw e; }
-
-    const blob = readIsolatedCredential(isoDir, { platform: ctx.platform, run: exec.run });
-    if (!blob) { const e = new Error('login completed but the new credential could not be read from the isolated store'); e.code = 'no-cred'; throw e; }
-
-    let em = null, org = null;
-    const st = parseAuthStatus(exec.run('claude', ['auth', 'status'], undefined, { timeoutMs: 8000, env: env }).stdout);
-    if (st) { em = st.email || null; org = st.orgId || null; }
-
-    if (opts.email && em && em.toLowerCase() !== opts.email.toLowerCase()) {
-      const e = new Error('signed in as ' + em + ', not ' + opts.email + ' — the browser was already logged into claude.com as ' + em); e.code = 'mismatch'; e.actual = em; throw e;
-    }
-    let existing = null;
-    if (em) profiles.list(ctx.configDir).forEach(function (n) { if (!existing && (profiles.email(ctx.configDir, n) || '').toLowerCase() === em.toLowerCase()) existing = n; });
-    const finalName = existing || opts.name || core.autoName(ctx, em || '');
-    if (!existing && profiles.exists(ctx.configDir, finalName) && profiles.email(ctx.configDir, finalName) !== (em || '')) {
-      const e = new Error("profile '" + finalName + "' already exists for a different account — pass a name"); e.code = 'name-taken'; throw e;
-    }
-    ctx.store.setProfile(finalName, blob);
-    const oa = {}; if (org) oa.organizationUuid = org; if (em) oa.emailAddress = em;
-    profiles.write(ctx.configDir, { name: finalName, email: em || '', oauthAccount: oa, userID: '', savedAt: ctx.now(), viaLogin: true });
-    return { status: existing ? 'refreshed' : 'captured', name: finalName, email: em || null };
+    return captureFromIso(ctx, isoDir, env, opts);
   } finally {
     cleanIsolatedKeychain(isoDir, { platform: ctx.platform, run: exec.run });
     try { fs.rmSync(isoDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
   }
+}
+
+// Read the credential an isolated `claude auth login` just wrote, resolve the real
+// identity (guard against the browser-session mismatch), and save it as a profile.
+// Throws Error with `.code` on failure. Shared by the auto and manual login paths.
+function captureFromIso(ctx, isoDir, env, opts) {
+  opts = opts || {};
+  const exec = require('./exec');
+  const profiles = require('./profiles');
+  const core = require('./core');
+  const blob = readIsolatedCredential(isoDir, { platform: ctx.platform, run: exec.run });
+  if (!blob) { const e = new Error('login completed but the new credential could not be read from the isolated store'); e.code = 'no-cred'; throw e; }
+  let em = null, org = null;
+  const st = parseAuthStatus(exec.run('claude', ['auth', 'status'], undefined, { timeoutMs: 8000, env: env }).stdout);
+  if (st) { em = st.email || null; org = st.orgId || null; }
+  if (opts.email && em && em.toLowerCase() !== opts.email.toLowerCase()) {
+    const e = new Error('signed in as ' + em + ', not ' + opts.email + ' — the browser was already logged into claude.com as ' + em); e.code = 'mismatch'; e.actual = em; throw e;
+  }
+  let existing = null;
+  if (em) profiles.list(ctx.configDir).forEach(function (n) { if (!existing && (profiles.email(ctx.configDir, n) || '').toLowerCase() === em.toLowerCase()) existing = n; });
+  const finalName = existing || opts.name || core.autoName(ctx, em || '');
+  if (!existing && profiles.exists(ctx.configDir, finalName) && profiles.email(ctx.configDir, finalName) !== (em || '')) {
+    const e = new Error("profile '" + finalName + "' already exists for a different account — pass a name"); e.code = 'name-taken'; throw e;
+  }
+  ctx.store.setProfile(finalName, blob);
+  const oa = {}; if (org) oa.organizationUuid = org; if (em) oa.emailAddress = em;
+  profiles.write(ctx.configDir, { name: finalName, email: em || '', oauthAccount: oa, userID: '', savedAt: ctx.now(), viaLogin: true });
+  return { status: existing ? 'refreshed' : 'captured', name: finalName, email: em || null };
+}
+
+// Pull the OAuth `code` out of whatever the user pastes — a bare code, or the full
+// redirect URL (…/callback?code=XXX&state=…). Returns the trimmed input otherwise.
+function extractCode(line) {
+  const s = String(line || '').trim();
+  const m = s.match(/[?&]code=([^&\s]+)/);
+  return m ? decodeURIComponent(m[1]) : s;
+}
+
+// Manual/paste login: run the isolated `claude auth login` interactively; the user
+// completes the sign-in however they like (email code, magic link, …) and pastes
+// the resulting code OR the whole redirect URL, which we feed to claude. Resolves
+// like performLogin. Interactive — for a real terminal, not the MCP server.
+function performLoginManual(ctx, opts) {
+  opts = opts || {};
+  return new Promise(function (resolve, reject) {
+    const fs = require('fs'); const path = require('path'); const os = require('os');
+    const cp = require('child_process'); const readline = require('readline');
+    const exec = require('./exec');
+    const isoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-login-'));
+    const env = Object.assign({}, process.env, { CLAUDE_CONFIG_DIR: isoDir });
+    try { require('./claude').writeConfig(path.join(isoDir, '.claude.json'), { hasCompletedOnboarding: true }); } catch (e) { /* best-effort */ }
+    const args = ['auth', 'login', opts.useConsole ? '--console' : '--claudeai'];
+    if (opts.sso) args.push('--sso');
+    if (opts.email) args.push('--email', opts.email);
+
+    let settled = false, rl = null;
+    function cleanup() { cleanIsolatedKeychain(isoDir, { platform: ctx.platform, run: exec.run }); try { fs.rmSync(isoDir, { recursive: true, force: true }); } catch (e) { /* ignore */ } }
+    function done(fn, arg) { if (settled) return; settled = true; try { if (rl) rl.close(); } catch (e) { /* */ } fn(arg); }
+
+    const child = cp.spawn('claude', args, { stdio: ['pipe', 'inherit', 'inherit'], env: env });
+    child.on('error', function (e) { const err = new Error('could not run `claude auth login`: ' + e.message); err.code = 'claude-missing'; cleanup(); done(reject, err); });
+    child.on('exit', function () {
+      // The child finished — either the browser callback completed it, or it accepted
+      // the code we fed. Capture whatever credential it wrote.
+      try { const res = captureFromIso(ctx, isoDir, env, opts); cleanup(); done(resolve, res); }
+      catch (e) { cleanup(); done(reject, e); }
+    });
+
+    rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    rl.question('\nSign in in the browser (email code, magic link, whatever). When you see a code — or land on the redirect URL — paste it here and press Enter\n(or just wait if the browser finishes on its own): ', function (line) {
+      try { child.stdin.write(extractCode(line) + '\n'); } catch (e) { /* child may already be gone */ }
+    });
+  });
 }
 
 // Sign the Claude Code CLI out (official logout + clear the live credential +
@@ -131,5 +184,8 @@ module.exports = {
   parseAuthStatus: parseAuthStatus,
   cleanIsolatedKeychain: cleanIsolatedKeychain,
   performLogin: performLogin,
+  performLoginManual: performLoginManual,
+  captureFromIso: captureFromIso,
+  extractCode: extractCode,
   cliLogout: cliLogout,
 };

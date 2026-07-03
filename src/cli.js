@@ -74,9 +74,10 @@ function usage() {
   print('  keyflip                       interactive menu (↑/↓ + Enter)');
   print('  keyflip setup                 guided wizard: log into each account, keyflip captures');
   print('                                 them for you automatically (the easy way to add several)');
-  print('  keyflip login [name] [--email x] [--fresh]   sign in via the official browser flow');
+  print('  keyflip login [name] [--email x] [--fresh|--manual]   sign in via the official flow');
   print('                                 and capture it (isolated — current login NOT disturbed;');
-  print('                                 --fresh clears the browser claude.ai session first)');
+  print('                                 --fresh clears the browser session first; --manual lets you');
+  print('                                 paste the code/redirect-URL, e.g. for email-code sign-in)');
   print('  keyflip add [name] [--app]    save the account(s) you are logged into — Claude Code');
   print('                                 AND the desktop app, auto-detected. Once per account.');
   print('                                 (--app: desktop app only; name it if undetected)');
@@ -1186,6 +1187,7 @@ async function cmdLogin(ctx, rest) {
   const useConsole = rest.indexOf('--console') !== -1;
   const sso = rest.indexOf('--sso') !== -1;
   const fresh = rest.indexOf('--fresh') !== -1;
+  const manual = rest.indexOf('--manual') !== -1 || rest.indexOf('--paste') !== -1;
   const emailValIdx = ei !== -1 ? ei + 1 : -1;
   const name = rest.filter(function (a, i) { return a.indexOf('-') !== 0 && i !== emailValIdx; })[0] || null;
   if (name && !profiles.isValidName(name)) return fail("invalid profile name: '" + name + "' (allowed: A-Z a-z 0-9 . _ -)");
@@ -1205,11 +1207,15 @@ async function cmdLogin(ctx, rest) {
 
   print(style.bold('keyflip login') + ' — sign in to a Claude account (your current login stays put).');
   print('A browser will open. ' + (email ? 'Sign in as ' + style.bold(email) : 'Sign in to the account you want to add') +
-    ' and approve — then I capture it automatically.\n');
+    (manual ? ' — sign in however you like (email code, magic link); paste the code/URL when asked.\n' : ' and approve — then I capture it automatically.\n'));
+
+  if (manual && !process.stdin.isTTY) return fail('--manual is interactive — run it in a real terminal (it reads the pasted code from stdin).');
 
   let res;
   try {
-    res = loginmod.performLogin(ctx, { email: email, name: name, useConsole: useConsole, sso: sso, stdio: 'inherit' });
+    res = manual
+      ? await loginmod.performLoginManual(ctx, { email: email, name: name, useConsole: useConsole, sso: sso })
+      : loginmod.performLogin(ctx, { email: email, name: name, useConsole: useConsole, sso: sso, stdio: 'inherit' });
   } catch (e) {
     if (e.code === 'mismatch') {
       return fail(e.message + '.\nFix: log out of claude.com in that browser (' + style.bold('keyflip browser logout') +
