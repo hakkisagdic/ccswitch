@@ -74,8 +74,9 @@ function usage() {
   print('  keyflip                       interactive menu (↑/↓ + Enter)');
   print('  keyflip setup                 guided wizard: log into each account, keyflip captures');
   print('                                 them for you automatically (the easy way to add several)');
-  print('  keyflip login [name] [--email x]   sign in via the official browser flow and capture it');
-  print('                                 (isolated — your current login is NOT disturbed)');
+  print('  keyflip login [name] [--email x] [--fresh]   sign in via the official browser flow');
+  print('                                 and capture it (isolated — current login NOT disturbed;');
+  print('                                 --fresh clears the browser claude.ai session first)');
   print('  keyflip add [name] [--app]    save the account(s) you are logged into — Claude Code');
   print('                                 AND the desktop app, auto-detected. Once per account.');
   print('                                 (--app: desktop app only; name it if undetected)');
@@ -120,8 +121,9 @@ function usage() {
   print('  keyflip mcp [--setup]         MCP server over stdio for agents (--setup shows config)');
   print('  keyflip install-skill         install the Claude Code skill that teaches agents keyflip');
   print('  keyflip upgrade               update keyflip itself (auto-detects install method)');
-  print('  keyflip reset [--all]         reset keyflip to a clean state, KEEP it installed +');
-  print('                                 keep accounts (clears runtime state; --all wipes all data)');
+  print('  keyflip reset [--all] [--logout [--no-desktop]]   reset to a clean state, KEEP accounts');
+  print('                                 (--all wipes all data; --logout signs out CLI+browser+desktop,');
+  print('                                 --no-desktop leaves the desktop app signed in)');
   print('  keyflip clean [--logout]      delete ALL keyflip data; --logout also signs out of');
   print('                                 Claude Code + the desktop app (asks to confirm)');
   print('  keyflip uninstall [--purge]   remove keyflip from this machine (auto-detects install;');
@@ -187,6 +189,22 @@ async function cmdSwitch(ctx, rest) {
 
   function emitSwitched(did, appl, cons) {
     logmod.log('switched -> ' + name + ' (cli=' + !!(did && did.cli) + ', app=' + !!(appl && appl.ok) + ')');
+    // Best-effort: if the browser (and thus the Claude Chrome extension) is on a
+    // different claude.ai account, warn — the native-messaging bridge won't connect.
+    if (!JSON_MODE && ctx.platform === 'darwin') {
+      try {
+        const browser = require('./browser');
+        const meta = profiles.read(ctx.configDir, name) || {};
+        const wantOrg = meta.oauthAccount && meta.oauthAccount.organizationUuid;
+        if (wantOrg) browser.installed(ctx.home).forEach(function (b) {
+          const ck = browser.readClaudeCookies(b, {});
+          if (ck && ck.org && ck.org !== wantOrg) {
+            print('  ' + style.warn('⚠') + ' ' + b.name + ' claude.ai is a different account — the Claude browser extension won\'t connect here.');
+            print('     Fix: ' + style.bold('keyflip browser logout') + ', then open claude.ai and sign in as ' + (em || name) + '.');
+          }
+        });
+      } catch (e) { /* best-effort — never block a switch on this */ }
+    }
     jsonOut({
       switched: { name: name, email: em || null },
       cliSwitched: !!(did && did.cli),
@@ -1169,10 +1187,23 @@ async function cmdLogin(ctx, rest) {
   const email = ei !== -1 ? rest[ei + 1] : null;
   const useConsole = rest.indexOf('--console') !== -1;
   const sso = rest.indexOf('--sso') !== -1;
+  const fresh = rest.indexOf('--fresh') !== -1;
   const emailValIdx = ei !== -1 ? ei + 1 : -1;
   const name = rest.filter(function (a, i) { return a.indexOf('-') !== 0 && i !== emailValIdx; })[0] || null;
   if (name && !profiles.isValidName(name)) return fail("invalid profile name: '" + name + "' (allowed: A-Z a-z 0-9 . _ -)");
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("'" + email + "' is not a valid email address");
+
+  // --fresh: clear the browser's claude.ai session first, so the OAuth page prompts
+  // a genuine login as the account you want (OAuth reuses whatever the browser is
+  // signed into — otherwise it silently captures THAT account, not the one you meant).
+  if (fresh && ctx.platform === 'darwin') {
+    const browser = require('./browser');
+    browser.installed(ctx.home).forEach(function (b) {
+      const cr = browser.clearClaudeCookies(b, {});
+      if (cr.ok) print(style.dim('· cleared ' + b.name + ' claude.ai session (backup: ' + cr.backup + ')'));
+      else if (cr.reason === 'browser-running') print(style.warn('⚠️') + ' quit ' + b.name + ' first for --fresh to take effect (its claude.ai session is still active).');
+    });
+  }
 
   const os = require('os');
   const isoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keyflip-login-'));
@@ -1427,12 +1458,55 @@ function wipeKeyflipData(ctx) {
   return names.length;
 }
 
+// Sign the machine OUT of Claude across every surface selected in `opts`
+// (cli / browser / desktop). Shared by `reset --logout` and `clean --logout`.
+// Never wipes saved keyflip profiles — only clears the LIVE sessions. Returns the
+// surfaces actually signed out.
+async function logoutSurfaces(ctx, opts) {
+  opts = opts || {};
+  const out = [];
+  if (opts.cli) {
+    try { exec.run('claude', ['auth', 'logout'], undefined, { timeoutMs: 8000 }); } catch (e) { /* best-effort */ }
+    try { ctx.store.delLive(); } catch (e) { /* already gone */ }
+    try {
+      const c = claude.readConfig(ctx.claudeConfigPath);
+      if (c && (c.oauthAccount || c.userID)) { delete c.oauthAccount; delete c.userID; claude.writeConfig(ctx.claudeConfigPath, c); }
+    } catch (e) { /* ignore */ }
+    print('  ' + style.ok('✓') + ' signed out of Claude Code (CLI).'); out.push('cli');
+  }
+  if (opts.browser && ctx.platform === 'darwin') {
+    const browser = require('./browser');
+    const list = browser.installed(ctx.home);
+    if (!list.length) print('  ' + style.dim('· no Chromium browser to sign out.'));
+    list.forEach(function (b) {
+      const r = browser.clearClaudeCookies(b, { force: !!opts.force });
+      if (r.ok) { print('  ' + style.ok('✓') + ' cleared ' + b.name + ' claude.ai session (backup: ' + r.backup + ').'); out.push('browser:' + b.id); }
+      else if (r.reason === 'browser-running') print('  ' + style.warn('⏭') + ' ' + b.name + ' is running — quit it, then re-run to clear its session.');
+      else print('  ' + style.warn('⚠️') + ' ' + b.name + ': ' + r.reason);
+    });
+  }
+  if (opts.desktop && ctx.appDataDir) {
+    const wasRunning = appctl.isClaudeRunning(ctx.platform);
+    if (wasRunning && appctl.canManageApp(ctx.platform)) { appctl.quitClaude(ctx.platform); await waitForQuit(ctx); }
+    if (!appctl.isClaudeRunning(ctx.platform)) {
+      const r = appauth.signOutApp(ctx);
+      if (r.ok) { print('  ' + style.ok('✓') + ' signed out of the Claude desktop app.'); out.push('desktop'); }
+      if (wasRunning && appctl.canManageApp(ctx.platform)) appctl.openClaude(ctx.platform);
+    } else { print('  ' + style.warn('⚠️') + ' Close the Claude desktop app, then re-run to sign it out.'); }
+  }
+  return out;
+}
+
 // `keyflip reset` — return keyflip to a clean working state but KEEP it installed
 // and KEEP saved accounts. Clears only runtime/derived state, stops a running
 // proxy, and routes Claude Code back to the subscription. `--all` = full wipe.
+// `--logout` also signs OUT of every live surface (CLI + browser + desktop);
+// `--no-desktop` leaves the desktop app alone (e.g. when you're using it now).
 async function cmdReset(ctx, rest) {
   logmod.log('reset invoked');
   const force = rest.indexOf('--force') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
+  const logout = rest.indexOf('--logout') !== -1 || rest.indexOf('--signout') !== -1;
+  const noDesktop = rest.indexOf('--no-desktop') !== -1 || rest.indexOf('--keep-desktop') !== -1;
   if (rest.indexOf('--all') !== -1 || rest.indexOf('--hard') !== -1) {
     // Full data wipe (accounts included), still keeping keyflip installed = clean.
     return cmdClean(ctx, force ? ['--force'] : []);
@@ -1443,7 +1517,7 @@ async function cmdReset(ctx, rest) {
   const active = provider.readActive(ctx);
   const provName = active && active.name;
 
-  if (!derived.length && !proxyUp && !provName) {
+  if (!derived.length && !proxyUp && !provName && !logout) {
     print('Nothing to reset — keyflip is already at a clean state.');
     jsonOut({ reset: true, cleared: [], keptAccounts: names.length });
     return;
@@ -1453,11 +1527,12 @@ async function cmdReset(ctx, rest) {
   if (derived.length) print('  • clear runtime state: ' + derived.map(function (d) { return d.name; }).join(', '));
   if (proxyUp) print('  • stop the running failover proxy');
   if (provName) print('  • route Claude Code back to your subscription (was: provider ' + provName + ')');
-  print('Kept: ' + names.length + ' saved account(s), providers, backups, captured desktop logins.');
-  print('Not touched: your Claude login, ~/.claude/projects history.');
+  if (logout) print('  • SIGN OUT of the live session: Claude Code (CLI)' + (ctx.platform === 'darwin' ? ' + browser (claude.ai)' : '') + (noDesktop ? '  (leaving the desktop app signed in)' : ' + the desktop app'));
+  print('Kept: ' + names.length + ' saved account(s), providers, backups' + (logout ? ' — you can switch back anytime.' : ', captured desktop logins.'));
+  print('Not touched: ' + (logout ? (noDesktop ? 'the desktop app, ' : '') : 'your Claude login, ') + '~/.claude/projects history.');
 
   if (!force) {
-    if (!process.stdin.isTTY) return fail('Re-run with --force to confirm the reset.');
+    if (!process.stdin.isTTY) return fail('Re-run with --force to confirm the reset' + (logout ? ' + sign-out.' : '.'));
     const ok = await confirm('\nProceed? [y/N] ');
     if (!ok) { print('Cancelled — nothing was changed.'); return; }
   }
@@ -1466,8 +1541,10 @@ async function cmdReset(ctx, rest) {
   if (provName) { try { provider.useOfficial(ctx); print('  ✓ routed Claude Code back to your subscription.'); } catch (e) { /* ignore */ } }
   derived.forEach(function (d) { try { fs.rmSync(d.path, { recursive: true, force: true }); } catch (e) { /* ignore */ } });
   if (derived.length) print('  ✓ cleared runtime state.');
-  print(style.ok('✅') + ' Reset complete — your accounts are intact.');
-  jsonOut({ reset: true, cleared: derived.map(function (d) { return d.name; }), stoppedProxy: proxyUp, revertedProvider: provName || null, keptAccounts: names.length });
+  let out = [];
+  if (logout) out = await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force });
+  print(style.ok('✅') + ' Reset complete' + (logout ? ' — signed out of: ' + (out.join(', ') || 'nothing') + '.' : ' — your accounts are intact.'));
+  jsonOut({ reset: true, cleared: derived.map(function (d) { return d.name; }), stoppedProxy: proxyUp, revertedProvider: provName || null, loggedOut: out, keptAccounts: names.length });
 }
 
 // `keyflip uninstall` — remove keyflip from this machine (npm-global or install.sh
@@ -1562,28 +1639,8 @@ async function cmdClean(ctx, rest) {
   }
 
   if (logout) {
-    try { ctx.store.delLive(); } catch (e) { /* already gone */ }
-    try {
-      const c = claude.readConfig(ctx.claudeConfigPath);
-      if (c && (c.oauthAccount || c.userID)) { delete c.oauthAccount; delete c.userID; claude.writeConfig(ctx.claudeConfigPath, c); }
-    } catch (e) { /* ignore */ }
-    print('  ✓ signed out of Claude Code (CLI).');
-
-    if (ctx.appDataDir) {
-      const wasRunning = appctl.isClaudeRunning(ctx.platform);
-      if (wasRunning && appctl.canManageApp(ctx.platform)) {
-        print('  Closing the desktop app to sign it out...');
-        appctl.quitClaude(ctx.platform);
-        await waitForQuit(ctx);
-      }
-      if (!appctl.isClaudeRunning(ctx.platform)) {
-        const r = appauth.signOutApp(ctx);
-        if (r.ok) print('  ✓ signed out of the Claude desktop app.');
-        if (wasRunning && appctl.canManageApp(ctx.platform)) { appctl.openClaude(ctx.platform); }
-      } else {
-        print('  ⚠️ Close the Claude desktop app, then re-run to sign it out.');
-      }
-    }
+    const noDesktop = rest.indexOf('--no-desktop') !== -1 || rest.indexOf('--keep-desktop') !== -1;
+    await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force });
   }
   print('✅ Done.');
 }

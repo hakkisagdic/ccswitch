@@ -158,6 +158,20 @@ test('reset --json without --force on a non-TTY refuses (does not delete)', func
   assert.ok(fs.existsSync(path.join(cfg, 'usage-history.jsonl')), 'must not clear without confirmation');
 });
 
+test('reset --logout --no-desktop signs out the CLI but keeps saved accounts', function () {
+  const home = tmp();
+  const cfg = seed(home);
+  // a live CLI login for reset --logout to sign out of
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), '{"live":"TOK"}');
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'x@y.com' }, userID: 'u' }));
+  const r = run(home, ['reset', '--logout', '--no-desktop', '--force']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const claudeCfg = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+  assert.ok(!claudeCfg.oauthAccount, 'the CLI login should be signed out');
+  assert.ok(fs.existsSync(path.join(cfg, 'work.json')), 'saved accounts are kept');
+});
+
 // ---- integration: uninstall from a dev checkout never deletes the repo -------
 
 test('uninstall --purge --force from a source checkout leaves the repo, purges data', function () {

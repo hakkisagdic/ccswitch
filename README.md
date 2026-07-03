@@ -421,8 +421,12 @@ Add more Node versions or OS images by editing the `matrix` in the workflow.
 keyflip reset                # back to a clean state, KEEP accounts (clears usage
                              #   history, breakers, proxy state, caches, logs; routes
                              #   Claude Code back to your subscription). App stays.
+keyflip reset --logout       # ...and sign OUT of every live surface: CLI + browser
+                             #   (claude.ai) + desktop app. Saved accounts are kept.
+keyflip reset --logout --no-desktop   # ...but leave the desktop app signed in (e.g.
+                             #   when you're using it right now)
 keyflip reset --all          # wipe ALL keyflip data (accounts too) but keep it installed
-keyflip clean --logout       # wipe all data AND sign out of Claude Code + the desktop app
+keyflip clean --logout       # wipe all data AND sign out everywhere (CLI+browser+desktop)
 
 keyflip uninstall            # remove keyflip from this machine, keep saved data
 keyflip uninstall --purge    # ...and delete saved data + Keychain items too

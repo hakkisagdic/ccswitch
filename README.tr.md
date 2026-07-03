@@ -441,8 +441,12 @@ Her işletim sistemine sahip olmanız gerekmez. İki katman:
 keyflip reset                # temiz duruma dön, HESAPLARI KORU (kullanım geçmişi,
                              #   breaker, proxy durumu, cache, log temizlenir; Claude
                              #   Code aboneliğe geri döner). Uygulama kalır.
+keyflip reset --logout       # ...ve tüm canlı yüzeylerden ÇIKIŞ yap: CLI + tarayıcı
+                             #   (claude.ai) + masaüstü uygulaması. Kayıtlı hesaplar korunur.
+keyflip reset --logout --no-desktop   # ...ama masaüstü uygulamasını girişli bırak
+                             #   (ör. şu an onu kullanıyorsan)
 keyflip reset --all          # TÜM keyflip verisini sil (hesaplar dahil) ama kurulu bırak
-keyflip clean --logout       # tüm veriyi sil VE Claude Code + masaüstü uygulamasından çıkış yap
+keyflip clean --logout       # tüm veriyi sil VE her yerden çıkış (CLI+tarayıcı+masaüstü)
 
 keyflip uninstall            # keyflip'i bu makineden kaldır, kayıtlı veriyi tut
 keyflip uninstall --purge    # ...ve kayıtlı veriyi + Keychain öğelerini de sil
