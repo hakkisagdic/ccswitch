@@ -96,7 +96,7 @@ function performLogin(ctx, opts) {
     }
     let existing = null;
     if (em) profiles.list(ctx.configDir).forEach(function (n) { if (!existing && (profiles.email(ctx.configDir, n) || '').toLowerCase() === em.toLowerCase()) existing = n; });
-    const finalName = existing || opts.name || core.uniqueName(ctx, profiles.sanitizeName(em || 'account'), em || '');
+    const finalName = existing || opts.name || core.autoName(ctx, em || '');
     if (!existing && profiles.exists(ctx.configDir, finalName) && profiles.email(ctx.configDir, finalName) !== (em || '')) {
       const e = new Error("profile '" + finalName + "' already exists for a different account — pass a name"); e.code = 'name-taken'; throw e;
     }

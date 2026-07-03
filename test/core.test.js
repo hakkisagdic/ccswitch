@@ -222,3 +222,19 @@ test('resolveProfile treats a number as the menu index, not a digit-named profil
   assert.strictEqual(core.resolveProfile(ctx, '2'), 'aaa'); // index 2, NOT the profile literally named "2"
   assert.strictEqual(core.resolveProfile(ctx, '3'), null);  // out of range
 });
+
+test('autoName never collides across accounts with the same email local-part', function () {
+  const ctx = makeCtx();
+  // free local-part → bare
+  assert.strictEqual(core.autoName(ctx, 'jane@gmail.com'), 'jane');
+  profiles.write(ctx.configDir, { name: 'jane', email: 'jane@gmail.com' });
+  // same local-part, different domain → disambiguated by domain, not a bare collision
+  assert.strictEqual(core.autoName(ctx, 'jane@hotmail.com'), 'jane-hotmail');
+  // the same email keeps its own bare name (refresh, not a new alias)
+  assert.strictEqual(core.autoName(ctx, 'jane@gmail.com'), 'jane');
+  profiles.write(ctx.configDir, { name: 'jane-hotmail', email: 'jane@hotmail.com' });
+  // a third same-local account → its own domain label
+  assert.strictEqual(core.autoName(ctx, 'jane@yahoo.com'), 'jane-yahoo');
+  // no email → safe fallback
+  assert.strictEqual(core.autoName(ctx, ''), 'account');
+});

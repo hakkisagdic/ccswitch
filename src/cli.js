@@ -1083,7 +1083,7 @@ function captureApp(ctx, nameArg) {
       if ((email && m.email === email) ||
           (det.org && m.oauthAccount && m.oauthAccount.organizationUuid === det.org)) name = n;
     });
-    if (!name && email) name = core.uniqueName(ctx, profiles.sanitizeName(email), email);
+    if (!name && email) name = core.autoName(ctx, email);
     if (!name) return { ok: false, needName: true };
   }
 

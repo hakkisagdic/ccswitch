@@ -41,6 +41,17 @@ function uniqueName(ctx, base, email) {
   return candidate;
 }
 
+// Auto-derive a profile name from an email that never collides across DIFFERENT
+// accounts: the bare local-part when it's free (or already this email's), else
+// disambiguated by domain (jane-gmail), else by number. So jane@gmail.com and
+// jane@hotmail.com don't both try to become "jane". Used by every capture path.
+function autoName(ctx, email) {
+  const base = profiles.sanitizeName(email);
+  if (!profiles.exists(ctx.configDir, base) || profiles.email(ctx.configDir, base) === email) return base;
+  const dom = (String(email || '').split('@')[1] || '').split('.')[0];
+  return uniqueName(ctx, dom ? base + '-' + dom : base, email);
+}
+
 // "Find & save": detect the logged-in account and store it, auto-naming from the
 // email. If it's already saved (matched by email), refresh its tokens instead.
 function addCurrent(ctx, nameOverride) {
@@ -67,12 +78,7 @@ function addCurrent(ctx, nameOverride) {
     }
     name = nameOverride;
   } else {
-    let base = profiles.sanitizeName(email);
-    if (profiles.exists(ctx.configDir, base) && profiles.email(ctx.configDir, base) !== email) {
-      const dom = (email.split('@')[1] || '').split('.')[0];
-      if (dom) base = base + '-' + dom;
-    }
-    name = uniqueName(ctx, base, email);
+    name = autoName(ctx, email);
   }
   saveAs(ctx, name);
   return { name: name, email: email, refreshed: false };
@@ -201,6 +207,7 @@ module.exports = {
   currentEmail: currentEmail,
   saveAs: saveAs,
   uniqueName: uniqueName,
+  autoName: autoName,
   addCurrent: addCurrent,
   applyProfile: applyProfile,
   refreshCurrent: refreshCurrent,
