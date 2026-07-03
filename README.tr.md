@@ -444,8 +444,9 @@ keyflip reset                # FABRİKA sıfırlaması — TÜM keyflip verisini
                              #   Canlı Claude oturumuna dokunulmaz; ~/.claude/projects korunur.
 keyflip reset --soft         # hesapları koru; yalnız runtime durumunu temizle (geçmiş, breaker,
                              #   proxy durumu, cache, log) + Claude Code aboneliğe geri döner
-keyflip reset --logout       # (fabrika ya da --soft) ek olarak tüm canlı yüzeylerden ÇIKIŞ:
-                             #   CLI + tarayıcı (claude.ai) + masaüstü uygulaması
+keyflip reset --logout       # (fabrika ya da --soft) her canlı yüzeyi KAPAT + ÇIKIŞ:
+                             #   CLI (çalışan Claude Code'ları kapatır), tarayıcı (kapatır +
+                             #   claude.ai/uzantı temizlenir), masaüstü (kapatır, kapalı kalır) — tam sıfır
 keyflip reset --logout --no-desktop   # ...ama masaüstü uygulamasını girişli bırak
                              #   (ör. şu an onu kullanıyorsan)
 

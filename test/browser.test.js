@@ -79,3 +79,11 @@ test('clearClaudeCookies reports no-cookies-db when the DB is absent', function 
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.reason, 'no-cookies-db');
 });
+
+test('quit issues an osascript "quit" for the browser app', function () {
+  const b = browser.catalog('/Users/x').chrome;
+  let called = null;
+  browser.quit(b, function (cmd, args) { called = { cmd: cmd, args: args }; return { code: 0 }; });
+  assert.strictEqual(called.cmd, '/usr/bin/osascript');
+  assert.ok(called.args.join(' ').indexOf('tell application "Google Chrome" to quit') !== -1);
+});

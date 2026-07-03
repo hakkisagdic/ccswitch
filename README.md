@@ -424,8 +424,9 @@ keyflip reset                # FACTORY reset — DELETE all keyflip data (accoun
                              #   Your live Claude login is NOT touched; ~/.claude/projects kept.
 keyflip reset --soft         # keep accounts; clear only runtime state (history, breakers,
                              #   proxy state, caches, logs) + route Claude Code back to the sub
-keyflip reset --logout       # (factory or --soft) ALSO sign OUT of every live surface:
-                             #   CLI + browser (claude.ai) + desktop app
+keyflip reset --logout       # (factory or --soft) also CLOSE + sign OUT every live surface:
+                             #   CLI (kills running Claude Codes), browser (quits it + clears
+                             #   claude.ai/extension), desktop app (quits, stays closed) — total zero
 keyflip reset --logout --no-desktop   # ...but leave the desktop app signed in (e.g.
                              #   when you're using it right now)
 

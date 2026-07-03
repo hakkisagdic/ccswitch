@@ -47,6 +47,11 @@ function isRunning(b, runner) {
   return !!(r && r.code === 0 && String(r.stdout).trim());
 }
 
+// Gracefully quit the browser (macOS) so its Cookies DB unlocks and we can clear it.
+function quit(b, runner) {
+  return (runner || run)('/usr/bin/osascript', ['-e', 'tell application "' + b.proc + '" to quit']);
+}
+
 // Read + decrypt this browser's claude.ai cookies. Returns { cookie, org } | null,
 // where `org` is the lastActiveOrg cookie (the account's org uuid) if present.
 function readClaudeCookies(b, opts) {
@@ -106,6 +111,7 @@ module.exports = {
   installed: installed,
   safeKey: safeKey,
   isRunning: isRunning,
+  quit: quit,
   readClaudeCookies: readClaudeCookies,
   parseCookieRows: parseCookieRows,
   clearClaudeCookies: clearClaudeCookies,

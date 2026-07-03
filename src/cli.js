@@ -1495,30 +1495,50 @@ function wipeKeyflipData(ctx) {
 async function logoutSurfaces(ctx, opts) {
   opts = opts || {};
   const out = [];
+  const closeApps = !!opts.closeApps;
+  const napMs = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+  // CLI: with closeApps, first terminate every running Claude Code process, then
+  // clear the live credential.
   if (opts.cli) {
+    if (closeApps) {
+      const insts = appctl.claudeInstances(ctx.home) || [];
+      let killed = 0;
+      insts.forEach(function (i) { try { process.kill(i.pid, 'SIGTERM'); killed++; } catch (e) { /* already gone */ } });
+      if (killed) print('  ' + style.ok('✓') + ' closed ' + killed + ' running Claude Code process(es).');
+    }
     loginmod.cliLogout(ctx);
     print('  ' + style.ok('✓') + ' signed out of Claude Code (CLI).'); out.push('cli');
   }
+
+  // Browser: with closeApps, quit each Chromium browser first (so its Cookies DB
+  // unlocks), then clear its claude.ai session — the Claude extension logs out with
+  // it. Without closeApps we refuse while it runs (clearing a live DB can corrupt it).
   if (opts.browser && ctx.platform === 'darwin') {
     const browser = require('./browser');
     const list = browser.installed(ctx.home);
     if (!list.length) print('  ' + style.dim('· no Chromium browser to sign out.'));
-    list.forEach(function (b) {
-      // NB: never forced by the reset/clean confirmation flag — clearing a running
-      // browser's live Cookies DB can corrupt it, so we always refuse while it runs.
-      const r = browser.clearClaudeCookies(b, { force: !!opts.forceBrowser });
-      if (r.ok) { print('  ' + style.ok('✓') + ' cleared ' + b.name + ' claude.ai session (backup: ' + r.backup + ').'); out.push('browser:' + b.id); }
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (closeApps && browser.isRunning(b)) {
+        browser.quit(b, exec.run);
+        for (let t = 0; t < 24 && browser.isRunning(b); t++) { await napMs(250); } // let it exit
+      }
+      const r = browser.clearClaudeCookies(b, { force: closeApps || !!opts.forceBrowser });
+      if (r.ok) { print('  ' + style.ok('✓') + ' ' + (closeApps ? 'closed ' + b.name + ' + cleared its' : 'cleared ' + b.name) + ' claude.ai session.'); out.push('browser:' + b.id); }
       else if (r.reason === 'browser-running') print('  ' + style.warn('⏭') + ' ' + b.name + ' is running — quit it, then re-run to clear its session.');
       else print('  ' + style.warn('⚠️') + ' ' + b.name + ': ' + r.reason);
-    });
+    }
   }
+
+  // Desktop app: quit it, sign it out, and — for a full close — leave it CLOSED.
   if (opts.desktop && ctx.appDataDir) {
     const wasRunning = appctl.isClaudeRunning(ctx.platform);
     if (wasRunning && appctl.canManageApp(ctx.platform)) { appctl.quitClaude(ctx.platform); await waitForQuit(ctx); }
     if (!appctl.isClaudeRunning(ctx.platform)) {
       const r = appauth.signOutApp(ctx);
-      if (r.ok) { print('  ' + style.ok('✓') + ' signed out of the Claude desktop app.'); out.push('desktop'); }
-      if (wasRunning && appctl.canManageApp(ctx.platform)) appctl.openClaude(ctx.platform);
+      if (r.ok) { print('  ' + style.ok('✓') + ' ' + (closeApps ? 'closed and ' : '') + 'signed out of the Claude desktop app.'); out.push('desktop'); }
+      if (!closeApps && wasRunning && appctl.canManageApp(ctx.platform)) appctl.openClaude(ctx.platform);
     } else { print('  ' + style.warn('⚠️') + ' Close the Claude desktop app, then re-run to sign it out.'); }
   }
   return out;
@@ -1561,7 +1581,7 @@ async function cmdReset(ctx, rest) {
     derived.forEach(function (d) { try { fs.rmSync(d.path, { recursive: true, force: true }); } catch (e) { /* ignore */ } });
     if (derived.length) print('  ✓ cleared runtime state.');
     let out = [];
-    if (logout) out = await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force });
+    if (logout) out = await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force, closeApps: true });
     print(style.ok('✅') + ' Soft reset complete — your ' + names.length + ' account(s) are intact.' + (logout ? ' Signed out of: ' + (out.join(', ') || 'nothing') + '.' : ''));
     jsonOut({ reset: 'soft', keptAccounts: names.length, loggedOut: out });
     return;
@@ -1597,7 +1617,7 @@ async function cmdReset(ctx, rest) {
   }
   print('  ✓ deleted all keyflip data (' + n + ' account(s)) and swept stray backups.');
   let out = [];
-  if (logout) out = await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force });
+  if (logout) out = await logoutSurfaces(ctx, { cli: true, browser: true, desktop: !noDesktop, force: force, closeApps: true });
   print(style.ok('✅') + ' Factory reset complete.' + (logout ? ' Signed out of: ' + (out.join(', ') || 'nothing') + '.' : ''));
   jsonOut({ reset: 'factory', wiped: true, accountsDeleted: n, loggedOut: out });
 }
