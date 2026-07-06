@@ -839,10 +839,14 @@ ALL the portable state that makes a machine ready:
   (known token shapes: sk-ant/sk/ghp_/AIza/xoxb/AKIA/Bearer/JWT/private-key + credential-shaped
   keys) that REDACTS every plaintext secret before it can travel — the structure moves, the keys
   don't (re-enter on the new machine). Redacted on collect AND re-redacted on merge (defence in
-  depth); env-refs (`${VAR}`) preserved; `*_TOKENS` limits kept. 12 tests incl. an adversarial
-  fuzz + the invariant `scanText(redact(x))===[]`. `keyflip agents` shows config + redaction
-  counts; MCP `agent_config:true` on export. **Residual limitation:** a secret under a benign key
-  name with no known prefix can slip the scanner — so real transfers should still be encrypted.
+  depth); env-refs (`${VAR}`) preserved; `*_TOKENS` limits kept. `keyflip agents` shows config +
+  redaction counts; MCP `agent_config:true` on export. **Opt-in carry (user choice):**
+  `--agent-config-secrets` carries the REAL keys instead of redacting (per the user's own wish to
+  move a full setup between their machines) — the CLI warns loudly and MCP hard-refuses unless the
+  bundle is encrypted, and entries are tagged `redacted:false` so the merge writes them as-is
+  rather than re-stripping. 15 tests incl. an adversarial fuzz + the invariant
+  `scanText(redact(x))===[]`. **Residual limitation:** a secret under a benign key name with no
+  known prefix can slip the scanner — so real transfers should still be encrypted.
   **Deferred:** Copilot/opencode/Aider (paths NEEDS-VERIFICATION on a real install).
 - **J2 — MCP configuration.** Carry the MCP server config across machines: Claude Code's
   `mcpServers` (`~/.claude.json` / project `.mcp.json`) and Claude Desktop's

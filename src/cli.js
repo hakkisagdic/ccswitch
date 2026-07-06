@@ -778,12 +778,15 @@ function bundleFilterOpts(rest) {
     o.agents = true;
     if (av.indexOf('=') !== -1) o.agentIds = av.slice(av.indexOf('=') + 1).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
   }
-  // J1 config-tier: --agent-config carries other agents' config files, ALWAYS redacted.
+  // J1 config-tier: --agent-config carries other agents' config files, redacted by default.
   const acv = rest.filter(function (a) { return a === '--agent-config' || a.indexOf('--agent-config=') === 0; })[0];
   if (acv) {
     o.agentConfig = true;
     if (acv.indexOf('=') !== -1) o.agentIds = acv.slice(acv.indexOf('=') + 1).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
   }
+  // Opt IN to carrying the REAL keys (not redacted). The caller must encrypt the bundle; the
+  // CLI refuses to write plaintext secrets to an unencrypted file.
+  if (rest.indexOf('--agent-config-secrets') !== -1) { o.agentConfig = true; o.agentConfigSecrets = true; }
   if (rest.indexOf('--only-sessions') !== -1) { o.noAccounts = true; o.noProviders = true; o.noMemory = true; o.noConfig = true; }
   if (rest.indexOf('--only-memory') !== -1) { o.noAccounts = true; o.noProviders = true; o.noSessions = true; o.noConfig = true; }
   if (rest.indexOf('--only-config') !== -1) { o.noAccounts = true; o.noProviders = true; o.noSessions = true; o.noMemory = true; }
@@ -837,7 +840,8 @@ async function cmdMigrate(ctx, rest) {
 
   if (sub === 'export') {
     const out = target || 'keyflip-migrate.json';
-    const built = migrate.buildBundle(ctx, bundleFilterOpts(rest));
+    const fopts = bundleFilterOpts(rest);
+    const built = migrate.buildBundle(ctx, fopts);
     if (!built.counts.accounts && !built.counts.transcripts && !built.counts.providers && !built.counts.memory && !built.counts.config && !built.counts.agents && !built.counts.agentConfig) {
       return fail('nothing to migrate (no accounts, providers, transcripts, or memory found).');
     }
@@ -851,14 +855,15 @@ async function cmdMigrate(ctx, rest) {
       fs.writeFileSync(out, json + '\n', { mode: 0o600 });
       try { fs.chmodSync(out, 0o600); } catch (e) { /* non-POSIX FS */ }
       note('📦 migrate bundle written to ' + style.bold("'" + out + "'") + ':');
-      note('   ' + built.counts.accounts + ' account(s), ' + built.counts.providers + ' provider(s), ' + built.counts.transcripts + ' transcript(s), ' + built.counts.memory + ' memory file(s), ' + built.counts.config + ' config item(s)' + (built.counts.agents ? ', ' + built.counts.agents + ' agent-memory file(s)' : '') + (built.counts.agentConfig ? ', ' + built.counts.agentConfig + ' agent-config file(s) (redacted)' : '') + '.');
+      note('   ' + built.counts.accounts + ' account(s), ' + built.counts.providers + ' provider(s), ' + built.counts.transcripts + ' transcript(s), ' + built.counts.memory + ' memory file(s), ' + built.counts.config + ' config item(s)' + (built.counts.agents ? ', ' + built.counts.agents + ' agent-memory file(s)' : '') + (built.counts.agentConfig ? ', ' + built.counts.agentConfig + ' agent-config file(s) (' + (fopts.agentConfigSecrets ? 'WITH API keys' : 'redacted') + ')' : '') + '.');
     }
     built.skippedAccounts.forEach(function (n) { note('  ⚠️ account skipped (credentials unreadable): ' + n); });
-    // Only accounts (login secrets) and providers (API keys) are sensitive; a memory/agents/
-    // sessions-only bundle carries none, so don't cry wolf about secrets it doesn't contain.
-    const hasSecrets = built.counts.accounts || built.counts.providers;
+    // Only accounts (login secrets), providers (API keys), and an opt-in agent-config-with-keys
+    // are sensitive; a redacted/memory/sessions-only bundle carries none, so don't cry wolf.
+    const agentSecretsCarried = fopts.agentConfigSecrets && (built.bundle.agentConfig || []).some(function (c) { return c.redacted === false && c.redactions > 0; });
+    const hasSecrets = built.counts.accounts || built.counts.providers || agentSecretsCarried;
     if (passphrase) note(style.ok('🔒') + ' encrypted (AES-256-GCM); import with the same --passphrase-file.');
-    else if (hasSecrets) note(style.warn('⚠️  This bundle CONTAINS LOGIN SECRETS') + ' — encrypt it (--passphrase-file <f>) or pipe through gpg, and delete it after importing.');
+    else if (hasSecrets) note(style.warn('⚠️  This bundle CONTAINS SECRETS' + (agentSecretsCarried ? ' (incl. agent API keys)' : ' (login tokens)')) + ' — encrypt it (--passphrase-file <f>) or pipe through gpg, and delete it after importing.');
     else note(style.dim('   No account/provider secrets in this bundle (memory/sessions only), but encrypt it anyway if it leaves your machine.'));
     note('   Desktop-app login and browser sessions are machine-bound — re-capture them on the new machine (' + style.bold('keyflip onboard') + ').');
     logmod.log('migrate export: ' + built.counts.accounts + ' acct, ' + built.counts.transcripts + ' tx');
@@ -895,7 +900,10 @@ async function cmdMigrate(ctx, rest) {
     const ag = res.agents || { added: 0, kept: 0, overwritten: 0 };
     if (ag.total) print('  agents:      ' + ag.added + ' added, ' + ag.kept + ' already here (kept)' + (ag.overwritten ? ', ' + ag.overwritten + ' overwritten' : '') + (ag.skipped ? ', ' + ag.skipped + ' skipped' : ''));
     const agc = res.agentConfig || { total: 0 };
-    if (agc.total) print('  agent-config:' + agc.added + ' added, ' + agc.kept + ' already here (kept)' + (agc.overwritten ? ', ' + agc.overwritten + ' overwritten' : '') + (agc.skipped ? ', ' + agc.skipped + ' skipped' : '') + '  ' + style.dim('(secrets redacted)'));
+    if (agc.total) {
+      const withKeys = (obj.agentConfig || []).some(function (c) { return c && c.redacted === false; });
+      print('  agent-config:' + agc.added + ' added, ' + agc.kept + ' already here (kept)' + (agc.overwritten ? ', ' + agc.overwritten + ' overwritten' : '') + (agc.skipped ? ', ' + agc.skipped + ' skipped' : '') + '  ' + style.dim(withKeys ? '(WITH API keys — the sender opted in)' : '(secrets redacted)'));
+    }
     if ((res.accounts.skipped.length || res.providers.skipped.length || tx.kept) && !force) {
       print(style.dim('  (existing entries were kept — re-run with --force to overwrite them instead.)'));
     }

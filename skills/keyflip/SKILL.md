@@ -170,10 +170,12 @@ account; `keyflip provider off` restores it. Never put an API key in argv — us
   that keyflip can carry (Cursor `~/.cursor/rules/`+`mcp.json`, Gemini `~/.gemini/GEMINI.md`+`settings.json`,
   Codex `~/.codex/AGENTS.md`+`memories/`+`config.toml`). Add `--agents` (or `--agents=cursor,gemini`)
   to carry MEMORY (**markdown ONLY**, no secrets), and/or `--agent-config` to carry CONFIG (MCP
-  servers/settings) — config is **ALWAYS secret-scanned + redacted** (`src/secretscan.js`) so keys
-  NEVER travel; the structure moves and you re-enter keys on the new machine (`${ENV}` refs are kept).
-  Re-redacted again on import (defence in depth). Both off by default; work on `migrate export`/`push`
-  / `transfer`. (MCP: `keyflip_agents` to inspect; `agents:true` / `agent_config:true` on `keyflip_migrate_export`.)
+  servers/settings) — config is **secret-scanned + redacted by default** (`src/secretscan.js`) so keys
+  don't travel; the structure moves and you re-enter keys on the new machine (`${ENV}` refs are kept).
+  Re-redacted again on import (defence in depth). To move a full setup between YOUR OWN machines,
+  `--agent-config-secrets` carries the REAL keys — but only with encryption (CLI warns; MCP
+  `agent_config_secrets` refuses without `passphrase_file`). Both off by default; work on `migrate
+  export`/`push`/`transfer`. (MCP: `keyflip_agents` to inspect; `agents`/`agent_config`/`agent_config_secrets` on `keyflip_migrate_export`.)
 - `keyflip settings [show | get <key> | set <key> <value> | unset <key>]` — view/edit
   `~/.claude/settings.json` (dot-paths for nesting, e.g. `set env.ANTHROPIC_MODEL opus`; Claude
   hot-reloads it). These settings ride `migrate`/`transfer` to other machines. (MCP: `keyflip_settings`.)

@@ -205,7 +205,7 @@ function buildBundle(ctx, opts) {
   const memory = opts.noMemory ? [] : collectMemory(ctx);
   const config = opts.noConfig ? {} : collectConfig(ctx);
   const agents = opts.agents ? require('./agents').collectAgentMemory(ctx, { only: opts.agentIds }) : []; // J1: opt-in
-  const agentConfig = opts.agentConfig ? require('./agents').collectAgentConfig(ctx, { only: opts.agentIds }) : []; // J1 config-tier (redacted)
+  const agentConfig = opts.agentConfig ? require('./agents').collectAgentConfig(ctx, { only: opts.agentIds, redact: !opts.agentConfigSecrets }) : []; // J1 config-tier (redacted unless opted in)
   const bundle = {
     format: FORMAT,
     version: VERSION,

@@ -215,3 +215,31 @@ test('bundle: --agent-config opts in; applyBundle merges redacted config on targ
   const landed = fs.readFileSync(path.join(dst.home, '.cursor', 'mcp.json'), 'utf8');
   assert.strictEqual(secretscan.scanText(landed).length, 0);
 });
+
+test('collectAgentConfig({redact:false}) carries the REAL keys (opt-in), tagged redacted:false', function () {
+  const ctx = makeCtx();
+  seedCursorMcp(ctx, JSON.stringify({ env: { ANTHROPIC_API_KEY: 'sk-ant-api03-REALKEY1234567890abcdefgh' } }));
+  const got = agents.collectAgentConfig(ctx, { redact: false });
+  assert.strictEqual(got[0].redacted, false);
+  assert.ok(got[0].redactions >= 1, 'still reports how many secrets it is carrying');
+  assert.ok(got[0].content.indexOf('sk-ant-api03-REALKEY') !== -1, 'the real key is carried');
+});
+
+test('mergeAgentConfig honors an intentional secret-carry (redacted:false) but re-redacts the default', function () {
+  const dst1 = makeCtx();
+  agents.mergeAgentConfig(dst1, [{ agent: 'cursor', rel: '.cursor/mcp.json', redacted: false, content: JSON.stringify({ env: { API_KEY: 'sk-ant-api03-KEEPME1234567890abcdefg' } }) }]);
+  assert.ok(fs.readFileSync(path.join(dst1.home, '.cursor', 'mcp.json'), 'utf8').indexOf('sk-ant-api03-KEEPME') !== -1, 'opted-in secret written as-is');
+
+  const dst2 = makeCtx();
+  agents.mergeAgentConfig(dst2, [{ agent: 'cursor', rel: '.cursor/mcp.json', redacted: true, content: JSON.stringify({ env: { API_KEY: 'sk-ant-api03-STRIPME1234567890abcd' } }) }]);
+  assert.strictEqual(secretscan.scanText(fs.readFileSync(path.join(dst2.home, '.cursor', 'mcp.json'), 'utf8')).length, 0, 'default entry re-redacted');
+});
+
+test('bundle: --agent-config-secrets carries real keys; default redacts', function () {
+  const src = ctxM();
+  seedCursorMcp(src, JSON.stringify({ env: { OPENAI_API_KEY: 'sk-proj-REALSECRET1234567890abcd' } }));
+  const withKeys = migrate.buildBundle(src, { agentConfig: true, agentConfigSecrets: true, noAccounts: true, noSessions: true, noProviders: true, noMemory: true, noConfig: true });
+  assert.ok(JSON.stringify(withKeys.bundle.agentConfig).indexOf('sk-proj-REALSECRET') !== -1, 'opt-in carries the key');
+  const redacted = migrate.buildBundle(src, { agentConfig: true, noAccounts: true, noSessions: true, noProviders: true, noMemory: true, noConfig: true });
+  assert.ok(JSON.stringify(redacted.bundle.agentConfig).indexOf('sk-proj-REALSECRET') === -1, 'default redacts');
+});

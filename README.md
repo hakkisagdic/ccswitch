@@ -139,7 +139,8 @@ keyflip export [file|-]       # back up accounts to a file (CONTAINS SECRETS)
 keyflip import <file|->       # restore accounts from an export (--force overwrites)
 keyflip migrate export <file> # bundle accounts + providers + transcripts + memory + config (MCP + settings)
                               #   select a subset: --sessions <id,id> / --search T / --newer-than 7d / --only-sessions
-                              #   add --agents (memory) and/or --agent-config (MCP/settings, secret-scanned+redacted) for other AI agents
+                              #   add --agents (memory) and/or --agent-config (MCP/settings, redacted) for other AI agents
+                              #   or --agent-config-secrets to carry the REAL keys between your own machines (encrypt it!)
 keyflip agents                # list other agents' memory + config keyflip can carry (Cursor/Gemini/Codex; secrets redacted)
 keyflip settings [show|get <k>|set <k> <v>]   # view/edit ~/.claude/settings.json (rides `migrate` to other machines)
 keyflip migrate import <file> # MERGE that bundle into this machine (union; --force overwrites)

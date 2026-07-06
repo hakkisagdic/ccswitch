@@ -139,7 +139,8 @@ keyflip export [dosya|-]      # hesapları dosyaya yedekle (SIR İÇERİR)
 keyflip import <dosya|->      # yedekten hesapları geri yükle (--force üzerine yazar)
 keyflip migrate export <dosya> # hesap + provider + transkript + memory + config (MCP + settings) paketle
                               #   altküme seç: --sessions <id,id> / --search T / --newer-than 7d / --only-sessions
-                              #   --agents (memory) ve/veya --agent-config (MCP/ayarlar, sır-taranıp redakte) ile diğer AI ajanları
+                              #   --agents (memory) ve/veya --agent-config (MCP/ayarlar, redakte) ile diğer AI ajanları
+                              #   veya --agent-config-secrets ile GERÇEK anahtarları kendi makinelerin arasında taşı (şifrele!)
 keyflip agents                # diğer ajanların memory + config'ini listele (Cursor/Gemini/Codex; sırlar redakte edilir)
 keyflip settings [show|get <k>|set <k> <v>]   # ~/.claude/settings.json'ı gör/düzenle (`migrate` ile diğer makinelere gider)
 keyflip migrate import <dosya> # bu paketi bu makineyle BİRLEŞTİR (birleşim; --force üzerine yazar)

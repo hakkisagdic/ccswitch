@@ -85,10 +85,13 @@ function presentAgents(ctx) {
   }).map(function (a) { return a.id; });
 }
 
-// J1 config-tier: collect present agents' config files, ALWAYS redacted (secrets never carried).
-// Returns [{ agent, rel, content (redacted), redactions }]. opts.only limits agent ids.
+// J1 config-tier: collect present agents' config files. By DEFAULT every secret is redacted
+// (structure travels, keys don't). The user can opt to carry the real keys with opts.redact
+// === false — the caller MUST then ensure the bundle is encrypted (CLI enforces this).
+// Returns [{ agent, rel, content, redactions, redacted }]. opts.only limits agent ids.
 function collectAgentConfig(ctx, opts) {
   opts = opts || {};
+  const redact = opts.redact !== false; // default: redact
   const secretscan = require('./secretscan');
   const only = opts.only && opts.only.length ? opts.only : null;
   const out = [];
@@ -97,15 +100,16 @@ function collectAgentConfig(ctx, opts) {
     a.files.forEach(function (rel) {
       const abs = path.join(ctx.home, rel);
       let raw; try { if (!fs.statSync(abs).isFile()) return; raw = fs.readFileSync(abs, 'utf8'); } catch (e) { return; }
-      const red = secretscan.redactConfig(raw);
-      out.push({ agent: a.id, rel: rel, content: red.text, redactions: red.count });
+      const red = secretscan.redactConfig(raw); // count = secrets present, regardless of mode
+      out.push({ agent: a.id, rel: rel, content: redact ? red.text : raw, redactions: red.count, redacted: redact });
     });
   });
   return out;
 }
 
 // UNION-merge agent config under $HOME. Keeps existing unless force; path-guarded to stay under
-// home; re-redacts on the way in (defence in depth — never trust a bundle to be clean).
+// home. Re-redacts incoming by DEFAULT (defence in depth — never trust a bundle to be clean),
+// EXCEPT entries the sender intentionally carried with secrets (redacted === false).
 function mergeAgentConfig(ctx, list, opts) {
   opts = opts || {};
   const secretscan = require('./secretscan');
@@ -120,7 +124,8 @@ function mergeAgentConfig(ctx, list, opts) {
     if (!fsutil.safeDestUnder(home, dest).ok) { skipped++; return; }
     const exists = fs.existsSync(dest);
     if (exists && !opts.force) { kept++; return; }
-    const safe = secretscan.redactConfig(m.content).text; // re-redact incoming, always
+    // Honor an intentional secret-carry (redacted===false); otherwise re-redact defensively.
+    const safe = (m.redacted === false) ? m.content : secretscan.redactConfig(m.content).text;
     try { fsutil.atomicWrite(dest, safe); if (exists) overwritten++; else added++; }
     catch (e) { skipped++; }
   });
