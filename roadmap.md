@@ -871,6 +871,14 @@ normalization) — all device-gated. See `docs/MULTI-AGENT-STATE.md`.
 > NOTE: this sits AFTER epic I (RAG) in priority, per the user — continue the existing list
 > (I1 next), then come back to J.
 
+### Session export ✅ (2026-07-07)
+`keyflip sessions export <id> [--format md|html|json] [--out <file|->]` renders a Claude Code
+transcript into a clean, shareable document: **markdown**, a **self-contained HTML chat view**
+(no script/fetch, browser-verified), or normalized **json**. Tool output is summarized
+("used Read, Grep"), not dumped; pure tool-result turns are elided; content is HTML-escaped.
+`src/transcript.js` (parse/toMarkdown/toHtml), 6 tests, MCP `keyflip_sessions_export` (read-only,
+returns the content), bilingual docs.
+
 ---
 
 ## Security review pass (2026-07-06, ultracode) — 17 confirmed defects fixed

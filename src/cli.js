@@ -123,6 +123,7 @@ function usage() {
   print('                                 renamed/moved its folder (transcripts + desktop-app records)');
   print('  keyflip sessions archive <id|--older-than 30d> | unarchive <id> | archived');
   print('                                 move old transcripts into keyflip (gzipped) and back — declutter, reversible');
+  print('  keyflip sessions export <id> [--format md|html|json] [--out <file>]   export a chat as a clean, shareable doc');
   print('  keyflip sessions assign <id> <account>   continue a session AS another account (resume --run) — no profile switch');
   print('  keyflip sessions distill <id> [--to-claude]   summarize a chat into a durable keepsake (via `claude -p`)');
   print('  keyflip sessions compact <id> [--apply]   shrink a transcript (elide bulky tool output; dry-run by default)');
@@ -1702,6 +1703,28 @@ async function cmdSessionsRebind(ctx, rest) {
   jsonOut({ rebind: { moved: r.moved, skipped: r.skipped, oldDir: r.oldDir, newDir: r.newDir } });
 }
 
+// Export a session transcript as a clean, shareable markdown / HTML / json document.
+function cmdSessionsExport(ctx, rest) {
+  const transcript = require('./transcript');
+  const id = positionals(rest, ['--format', '--out'])[0];
+  if (!id) return fail('usage: keyflip sessions export <id> [--format md|html|json] [--out <file|->]');
+  let row; try { row = sessions.find(ctx, id); } catch (e) { return fail(e.message); }
+  if (!row) return fail("no session matches '" + id + "'.");
+  let raw; try { raw = fs.readFileSync(row.file, 'utf8'); } catch (e) { return fail('cannot read the transcript: ' + (e && e.message)); }
+  const parsed = transcript.parse(raw);
+  const fmt = (flagVal(rest, '--format') || 'md').toLowerCase();
+  let out, ext;
+  if (fmt === 'html') { out = transcript.toHtml(parsed, { id: row.sessionId }); ext = 'html'; }
+  else if (fmt === 'json') { out = JSON.stringify(parsed, null, 2); ext = 'json'; }
+  else { out = transcript.toMarkdown(parsed, { id: row.sessionId }); ext = 'md'; }
+  const outArg = flagVal(rest, '--out');
+  if (outArg === '-') { process.stdout.write(out + (out.slice(-1) === '\n' ? '' : '\n')); return; }
+  const file = outArg || ('keyflip-session-' + row.sessionId.slice(0, 8) + '.' + ext);
+  try { fs.writeFileSync(file, out); } catch (e) { return fail('could not write ' + file + ': ' + (e && e.message)); }
+  if (JSON_MODE) { jsonOut({ sessionExport: { path: file, format: fmt, messages: parsed.counts.messages } }); return; }
+  print(style.ok('📄') + ' exported ' + parsed.counts.messages + ' message(s) to ' + style.bold("'" + file + "'") + ' ' + style.dim('(' + fmt + ', ' + parsed.counts.user + ' you / ' + parsed.counts.assistant + ' Claude)'));
+}
+
 async function cmdSessions(ctx, rest) {
   if (rest[0] === 'rebind') return cmdSessionsRebind(ctx, rest.slice(1));
   if (rest[0] === 'archive') return cmdSessionsArchive(ctx, rest.slice(1));
@@ -1711,6 +1734,7 @@ async function cmdSessions(ctx, rest) {
   if (rest[0] === 'compact') return cmdSessionsCompact(ctx, rest.slice(1));
   if (rest[0] === 'assign') return withLock(ctx, function () { return cmdSessionsAssign(ctx, rest.slice(1)); });
   if (rest[0] === 'unassign') return withLock(ctx, function () { return cmdSessionsUnassign(ctx, rest.slice(1)); });
+  if (rest[0] === 'export') return cmdSessionsExport(ctx, rest.slice(1));
   const opts = {
     search: flagVal(rest, '--search'),
     cwd: rest.indexOf('--cwd') !== -1 ? (flagVal(rest, '--cwd') === undefined ? '.' : flagVal(rest, '--cwd')) : null,

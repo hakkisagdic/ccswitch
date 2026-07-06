@@ -240,6 +240,20 @@ const TOOLS = [
       const rc = sessions.resumeCommand(row); return { cwd: rc.cwd, command: rc.command + ' ' + rc.args.join(' ') };
     },
   },
+  {
+    name: 'keyflip_sessions_export', title: 'Export a conversation as markdown/HTML',
+    description: 'Render a past Claude Code conversation into a clean, shareable document — markdown (default), a self-contained HTML chat view, or normalized json. Tool output is summarized ("used Read, Grep"), not dumped. Read-only: returns the rendered content (does not write a file).',
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Session id or unique prefix.' }, format: { type: 'string', enum: ['md', 'html', 'json'] } }, required: ['id'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) {
+      const transcript = require('./transcript');
+      const row = sessions.find(ctx, String(args.id)); if (!row) throw new Error('no such session: ' + args.id);
+      let raw; try { raw = fs.readFileSync(row.file, 'utf8'); } catch (e) { throw new Error('cannot read the transcript: ' + (e && e.message)); }
+      const parsed = transcript.parse(raw);
+      const fmt = args.format === 'html' ? 'html' : args.format === 'json' ? 'json' : 'md';
+      const content = fmt === 'html' ? transcript.toHtml(parsed, { id: row.sessionId }) : fmt === 'json' ? JSON.stringify(parsed, null, 2) : transcript.toMarkdown(parsed, { id: row.sessionId });
+      return { format: fmt, counts: parsed.counts, content: content };
+    },
+  },
 
   {
     name: 'keyflip_cowork', title: 'Browse Cowork sessions',
