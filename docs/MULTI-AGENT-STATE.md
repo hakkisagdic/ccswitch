@@ -42,7 +42,17 @@ on the way in (defence in depth) + refuses unknown paths + symlink-guards. Behin
 credential-key-name redaction; `${VAR}` refs and `*_TOKENS` limits preserved. Residual gap: a secret
 under a benign key with no known prefix can slip — encrypt real transfers.
 
-## F — read/normalize other tools' SESSION stores (deferred; spec for later)
+## F — read/normalize other tools' SESSION stores
+
+**v1 SHIPPED (2026-07-07):** `src/foreign.js` — `keyflip foreign <file>` + MCP `keyflip_foreign_export`.
+Detects + normalizes a session-log FILE into keyflip's unified conversation shape (the same
+`transcript.parse` output), then renders it as markdown/HTML/json via the Claude Code exporter.
+Supported now (zero-dep, tolerant): **message-event JSONL** (Claude Code, and Gemini-style
+`transcript.jsonl`) via the tested `transcript.parse`; **Aider** `.aider.chat.history.md` via a
+best-effort markdown parser (`#### ` = user, `> ` = summarized tool lines, other = assistant) —
+**verify against a real Aider install**. Deferred (need a runtime dep to parse): **Cursor**
+(SQLite) and **Copilot** (YAML). Each parser is isolated behind `detect()`, so adding a source
+later is one function + a fixture test.
 
 Unified shape: `{ tool, sessionId, created_at, updated_at, resumable, resumeCommand, messages[], metadata }`.
 

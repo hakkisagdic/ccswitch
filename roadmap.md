@@ -879,6 +879,14 @@ transcript into a clean, shareable document: **markdown**, a **self-contained HT
 `src/transcript.js` (parse/toMarkdown/toHtml), 6 tests, MCP `keyflip_sessions_export` (read-only,
 returns the content), bilingual docs.
 
+### Epic F v1 — foreign session import ◑ (2026-07-07)
+`keyflip foreign <file>` + MCP `keyflip_foreign_export` (`src/foreign.js`): detect + normalize
+ANOTHER agent's session-log FILE into keyflip's unified shape, then render with the Claude Code
+exporter. Ships **message-event JSONL** (Claude Code / Gemini-style, via the tested
+`transcript.parse`) and **Aider** `.aider.chat.history.md` (best-effort markdown parser). 6 tests.
+**Remaining:** Cursor (SQLite) + Copilot (YAML) need a runtime dep; auto-discovery of foreign
+session locations is device-gated (paths NEEDS-VERIFICATION). See `docs/MULTI-AGENT-STATE.md`.
+
 ---
 
 ## Security review pass (2026-07-06, ultracode) — 17 confirmed defects fixed

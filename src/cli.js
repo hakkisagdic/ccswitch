@@ -124,6 +124,7 @@ function usage() {
   print('  keyflip sessions archive <id|--older-than 30d> | unarchive <id> | archived');
   print('                                 move old transcripts into keyflip (gzipped) and back — declutter, reversible');
   print('  keyflip sessions export <id> [--format md|html|json] [--out <file>]   export a chat as a clean, shareable doc');
+  print('  keyflip foreign <session-file> [--format md|html|json]   normalize ANOTHER agent\'s session log (JSONL / Aider .md)');
   print('  keyflip sessions assign <id> <account>   continue a session AS another account (resume --run) — no profile switch');
   print('  keyflip sessions distill <id> [--to-claude]   summarize a chat into a durable keepsake (via `claude -p`)');
   print('  keyflip sessions compact <id> [--apply]   shrink a transcript (elide bulky tool output; dry-run by default)');
@@ -1703,6 +1704,28 @@ async function cmdSessionsRebind(ctx, rest) {
   jsonOut({ rebind: { moved: r.moved, skipped: r.skipped, oldDir: r.oldDir, newDir: r.newDir } });
 }
 
+// Epic F: normalize ANOTHER agent's session file (JSONL, or an Aider .md) into keyflip's
+// unified shape and render it with the same exporter. Point it at a file the user provides.
+function cmdForeign(ctx, rest) {
+  const foreign = require('./foreign');
+  const transcript = require('./transcript');
+  const file = positionals(rest, ['--format', '--out'])[0];
+  if (!file) return fail('usage: keyflip foreign <session-file> [--format md|html|json] [--out <file|->]\n  reads another agent\'s session log (message-event JSONL, or an Aider .aider.chat.history.md).');
+  let raw; try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { return fail('cannot read ' + file + ': ' + (e && e.message)); }
+  let norm; try { norm = foreign.normalize(file, raw); } catch (e) { return fail(e.message); }
+  const fmt = (flagVal(rest, '--format') || 'md').toLowerCase();
+  let out, ext;
+  if (fmt === 'html') { out = transcript.toHtml(norm, { id: norm.tool }); ext = 'html'; }
+  else if (fmt === 'json') { out = JSON.stringify(norm, null, 2); ext = 'json'; }
+  else { out = transcript.toMarkdown(norm, { id: norm.tool }); ext = 'md'; }
+  const outArg = flagVal(rest, '--out');
+  if (outArg === '-') { process.stdout.write(out + (out.slice(-1) === '\n' ? '' : '\n')); return; }
+  const dest = outArg || ('keyflip-foreign-' + norm.tool + '.' + ext);
+  try { fs.writeFileSync(dest, out); } catch (e) { return fail('could not write ' + dest + ': ' + (e && e.message)); }
+  if (JSON_MODE) { jsonOut({ foreign: { tool: norm.tool, path: dest, format: fmt, messages: norm.counts.messages } }); return; }
+  print(style.ok('📄') + ' normalized a ' + style.bold(norm.tool) + ' session (' + norm.counts.messages + ' messages) → ' + style.bold("'" + dest + "'") + ' ' + style.dim('(' + fmt + ')'));
+}
+
 // Export a session transcript as a clean, shareable markdown / HTML / json document.
 function cmdSessionsExport(ctx, rest) {
   const transcript = require('./transcript');
@@ -3082,7 +3105,7 @@ async function main(argv) {
   // Skip the passive update fetch for machine/interactive/long-lived commands: it
   // would corrupt the MCP stdio stream, delay `run`/`mcp` exit on a slow network,
   // or print a stray line during a destructive/JSON op.
-  const NO_NOTICE = ['menu', 'menubar', 'upgrade', 'reset', 'uninstall', 'setup', 'onboard', 'login', 'mcp', 'run', 'autoswitch', 'install-skill', 'statusline', 'send', 'panel', 'agents'];
+  const NO_NOTICE = ['menu', 'menubar', 'upgrade', 'reset', 'uninstall', 'setup', 'onboard', 'login', 'mcp', 'run', 'autoswitch', 'install-skill', 'statusline', 'send', 'panel', 'agents', 'foreign'];
   const skipNotice = JSON_MODE || cmd === undefined || NO_NOTICE.indexOf(cmd) !== -1;
   if (!skipNotice) { try { await update.maybeNotify(ctx, VERSION); } catch (e) { /* ignore */ } }
 }
@@ -3178,6 +3201,8 @@ async function dispatch(ctx, cmd, rest) {
         return cmdPanel(ctx, rest);
       case 'menubar':
         return cmdMenubar(ctx, rest);
+      case 'foreign':
+        return cmdForeign(ctx, rest);
       case 'sessions':
         return cmdSessions(ctx, rest);
       case 'resume':
