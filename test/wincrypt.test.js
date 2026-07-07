@@ -62,3 +62,9 @@ test('dpapiUnprotect builds a CurrentUser PowerShell CryptUnprotectData call', f
 test('dpapiUnprotect returns null when PowerShell fails', function () {
   assert.strictEqual(win.dpapiUnprotect(Buffer.from('x'), { run: function () { return { code: 1, stdout: '' }; } }), null);
 });
+
+test('masterKey returns null for a wrong-length DPAPI result (not the buffer)', function () {
+  const ls = JSON.stringify({ os_crypt: { encrypted_key: Buffer.concat([Buffer.from('DPAPI'), Buffer.from('x')]).toString('base64') } });
+  assert.strictEqual(win.masterKey(ls, { unprotect: function () { return Buffer.alloc(16); } }), null, '16-byte key is rejected');
+  assert.ok(Buffer.isBuffer(win.masterKey(ls, { unprotect: function () { return Buffer.alloc(32); } })), '32-byte key is accepted');
+});

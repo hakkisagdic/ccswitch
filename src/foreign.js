@@ -113,7 +113,7 @@ function parseCursor(buf) {
   const sq = require('./sqliteread');
   const kv = sq.readKV(buf, 'cursorDiskKV'); // throws if the table is absent
   const bubbles = [];
-  const composers = {};
+  const composers = Object.create(null); // keyed by attacker-controlled composer ids
   Object.keys(kv).forEach(function (k) {
     let m = k.match(/^bubbleId:([^:]+):(.+)$/);
     if (m) { let j; try { j = JSON.parse(kv[k]); } catch (e) { return; } const text = textOf(j); if (text) bubbles.push({ composer: m[1], id: m[2], key: k, role: roleOf(j), text: text }); return; }
@@ -122,7 +122,7 @@ function parseCursor(buf) {
   });
   if (!bubbles.length) return { messages: [], cwd: null, counts: countsOf([]) };
   // pick the composer with the most bubbles; order by its header list if present, else by key
-  const byComposer = {};
+  const byComposer = Object.create(null);
   bubbles.forEach(function (b) { (byComposer[b.composer] = byComposer[b.composer] || []).push(b); });
   const composer = Object.keys(byComposer).sort(function (a, b) { return byComposer[b].length - byComposer[a].length; })[0];
   let chosen = byComposer[composer];
@@ -130,7 +130,7 @@ function parseCursor(buf) {
   const order = meta && (meta.fullConversationHeadersOnly || meta.conversation || meta.messageIds);
   if (Array.isArray(order) && order.length) {
     const idOf = function (h) { return typeof h === 'string' ? h : (h && (h.bubbleId || h.id)) || ''; };
-    const rank = {}; order.forEach(function (h, i) { rank[idOf(h)] = i; });
+    const rank = Object.create(null); order.forEach(function (h, i) { rank[idOf(h)] = i; });
     chosen = chosen.slice().sort(function (a, b) { const ra = rank[a.id], rb = rank[b.id]; if (ra == null && rb == null) return a.key < b.key ? -1 : 1; if (ra == null) return 1; if (rb == null) return -1; return ra - rb; });
   } else {
     chosen = chosen.slice().sort(function (a, b) { return a.key < b.key ? -1 : 1; });

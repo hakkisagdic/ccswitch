@@ -50,7 +50,7 @@ function masterKey(localStateText, opts) {
   let raw; try { raw = Buffer.from(String(enc), 'base64'); } catch (e) { return null; }
   if (raw.slice(0, 5).toString('latin1') !== 'DPAPI') return null;
   const key = dpapiUnprotect(raw.slice(5), opts);
-  return (Buffer.isBuffer(key) && key.length === 32) ? key : (Buffer.isBuffer(key) ? key : null);
+  return (Buffer.isBuffer(key) && key.length === 32) ? key : null; // a valid 32-byte key, or null
 }
 
 module.exports = { decryptValue: decryptValue, dpapiUnprotect: dpapiUnprotect, masterKey: masterKey };

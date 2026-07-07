@@ -33,7 +33,9 @@ function parse(jsonl) {
   return { messages: messages, cwd: cwd, counts: counts };
 }
 
-function who(role) { return role === 'assistant' ? 'Claude' : role === 'user' ? 'You' : role; }
+// Untrusted role (a foreign JSONL sets it verbatim) — clamp unknown roles to a sanitized label
+// so it can't carry markup/newlines into the markdown or (with esc, below) the HTML.
+function who(role) { return role === 'assistant' ? 'Claude' : role === 'user' ? 'You' : (String(role == null ? '' : role).replace(/[^\w .-]/g, '').slice(0, 20) || 'agent'); }
 function shortTs(ts) { return ts ? String(ts).slice(0, 16).replace('T', ' ') : ''; }
 
 // Render as Markdown. opts: { id }.
@@ -63,7 +65,7 @@ function toHtml(parsed, opts) {
     const cls = m.role === 'assistant' ? 'a' : 'u';
     const tools = m.tools.length ? '<div class="tools">→ used ' + esc(dedupe(m.tools).join(', ')) + '</div>' : '';
     const body = m.text ? '<div class="body">' + esc(m.text).replace(/\n/g, '<br>') + '</div>' : '';
-    return '<div class="msg ' + cls + '"><div class="who">' + who(m.role) + (m.ts ? ' <span class="ts">' + esc(shortTs(m.ts)) + '</span>' : '') + '</div>' + body + tools + '</div>';
+    return '<div class="msg ' + cls + '"><div class="who">' + esc(who(m.role)) + (m.ts ? ' <span class="ts">' + esc(shortTs(m.ts)) + '</span>' : '') + '</div>' + body + tools + '</div>';
   }).join('');
   const sub = [parsed.cwd ? esc(parsed.cwd) : null, parsed.counts.messages + ' messages'].filter(Boolean).join(' · ');
   return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +

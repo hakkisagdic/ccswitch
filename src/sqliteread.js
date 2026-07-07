@@ -32,10 +32,13 @@ function open(buf) {
 // Decode a record (the payload of a table-leaf cell) into an array of column values.
 function parseRecord(payload) {
   const hdr = varint(payload, 0);
-  const headerEnd = hdr.value;
+  // SECURITY: the header size is an attacker-controlled varint (up to ~2^63). Clamp it to the
+  // real payload so a hostile record can't spin billions of iterations (past EOF varint() would
+  // otherwise return {value:0,len:1} forever) and OOM the process.
+  const headerEnd = Math.min(hdr.value, payload.length);
   const types = [];
   let p = hdr.len;
-  while (p < headerEnd) { const v = varint(payload, p); types.push(v.value); p += v.len; }
+  while (p < headerEnd && p < payload.length) { const v = varint(payload, p); types.push(v.value); p += (v.len || 1); }
   const values = [];
   let body = headerEnd;
   types.forEach(function (t) {
@@ -130,9 +133,10 @@ function readTable(buf, tableName) {
   return rows;
 }
 
-// Convenience for a 2-column (key,value) store like Cursor's cursorDiskKV.
+// Convenience for a 2-column (key,value) store like Cursor's cursorDiskKV. Null-prototype map
+// so an attacker-controlled DB key like `__proto__` can't mutate a prototype.
 function readKV(buf, tableName) {
-  const map = {};
+  const map = Object.create(null);
   readTable(buf, tableName).forEach(function (r) {
     const val = Buffer.isBuffer(r[1]) ? r[1].toString('utf8') : r[1];
     if (r[0] != null) map[String(r[0])] = val;

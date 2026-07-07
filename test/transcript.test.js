@@ -59,3 +59,11 @@ test('toHtml: user vs assistant get distinct bubble classes', function () {
   const html = transcript.toHtml(transcript.parse(JSONL), { id: 'x' });
   assert.ok(html.indexOf('class="msg u"') !== -1 && html.indexOf('class="msg a"') !== -1);
 });
+
+// SECURITY (review P0): a foreign JSONL sets `role` verbatim — it must not inject HTML.
+test('toHtml sanitizes+escapes an attacker-controlled role (no XSS)', function () {
+  const html = transcript.toHtml(transcript.parse('{"type":"user","message":{"role":"<img src=x onerror=alert(1)>","content":"hi"}}'), { id: 'x' });
+  const whoDiv = html.match(/<div class="who">([\s\S]*?)<\/div>/)[1].replace(/<span[\s\S]*/, '');
+  assert.ok(whoDiv.indexOf('<') === -1 && whoDiv.indexOf('>') === -1 && whoDiv.indexOf('=') === -1, 'no raw markup/attribute chars survive in the role label');
+  assert.strictEqual(html.indexOf('<img src=x'), -1);
+});

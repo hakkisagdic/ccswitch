@@ -65,3 +65,16 @@ test('document markers are ignored', function () {
 test('a top-level sequence parses to an array', function () {
   assert.deepStrictEqual(yaml.parse('- a\n- b\n- c'), ['a', 'b', 'c']);
 });
+
+// SECURITY (review): a hostile __proto__ key must not touch any prototype; deep nesting must not crash.
+test('__proto__ key becomes an own property, not a prototype mutation', function () {
+  const o = yaml.parse('__proto__: pwned\nok: 1');
+  assert.strictEqual(({}).pwned, undefined, 'Object.prototype not polluted');
+  assert.strictEqual(o.ok, 1);
+  assert.ok(Object.prototype.hasOwnProperty.call(o, '__proto__'), '__proto__ stored as an own prop');
+  assert.notStrictEqual(Object.getPrototypeOf(o), null, 'the parsed object keeps a normal prototype');
+});
+test('deeply-nested YAML is depth-capped, never a stack overflow', function () {
+  let deep = ''; for (let i = 0; i < 600; i++) deep += ' '.repeat(i) + 'k:\n';
+  assert.doesNotThrow(function () { yaml.parse(deep); });
+});

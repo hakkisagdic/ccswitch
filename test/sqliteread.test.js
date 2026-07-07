@@ -26,7 +26,9 @@ test('readTable / readKV round-trip a small key/value table', function (t) {
     "INSERT INTO cursorDiskKV VALUES('a','one');\n" +
     "INSERT INTO cursorDiskKV VALUES('b','two');\n");
   const kv = sq.readKV(buf, 'cursorDiskKV');
-  assert.deepStrictEqual(kv, { a: 'one', b: 'two' });
+  assert.strictEqual(kv.a, 'one');
+  assert.strictEqual(kv.b, 'two');
+  assert.strictEqual(Object.getPrototypeOf(kv), null, 'readKV returns a null-prototype map (proto-pollution safe)');
   assert.strictEqual(sq.readTable(buf, 'cursorDiskKV').length, 2);
 });
 
@@ -68,4 +70,13 @@ test('a missing table throws; a non-SQLite buffer throws', function (t) {
   const buf = mkdb('CREATE TABLE only(x TEXT);\n');
   assert.throws(function () { sq.readTable(buf, 'nope'); }, /no such table/);
   assert.throws(function () { sq.readTable(Buffer.from('not a database at all'), 'x'); }, /not a SQLite/);
+});
+
+// SECURITY (review P0): a hostile record header-size varint must not hang/OOM the parser.
+test('parseRecord bounds an attacker-controlled header size (no hang/OOM)', function () {
+  // header-size varint 0x8100 = 128, but the payload is only 3 bytes — must not spin to 128.
+  const t0 = Date.now();
+  const rec = require('../src/sqliteread').parseRecord(Buffer.from([0x81, 0x00, 0x09]));
+  assert.ok(Date.now() - t0 < 50, 'returns immediately, not a billion-iteration hang');
+  assert.ok(rec.length <= 3, 'type count is bounded by the actual payload length');
 });

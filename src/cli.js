@@ -787,8 +787,8 @@ function bundleFilterOpts(rest) {
     o.agentConfig = true;
     if (acv.indexOf('=') !== -1) o.agentIds = acv.slice(acv.indexOf('=') + 1).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
   }
-  // Opt IN to carrying the REAL keys (not redacted). The caller must encrypt the bundle; the
-  // CLI refuses to write plaintext secrets to an unencrypted file.
+  // Opt IN to carrying the REAL keys (not redacted). `migrate export` warns loudly if the bundle
+  // is unencrypted (MCP hard-refuses); encrypt with --passphrase-file.
   if (rest.indexOf('--agent-config-secrets') !== -1) { o.agentConfig = true; o.agentConfigSecrets = true; }
   if (rest.indexOf('--only-sessions') !== -1) { o.noAccounts = true; o.noProviders = true; o.noMemory = true; o.noConfig = true; }
   if (rest.indexOf('--only-memory') !== -1) { o.noAccounts = true; o.noProviders = true; o.noSessions = true; o.noConfig = true; }
@@ -863,7 +863,9 @@ async function cmdMigrate(ctx, rest) {
     built.skippedAccounts.forEach(function (n) { note('  ⚠️ account skipped (credentials unreadable): ' + n); });
     // Only accounts (login secrets), providers (API keys), and an opt-in agent-config-with-keys
     // are sensitive; a redacted/memory/sessions-only bundle carries none, so don't cry wolf.
-    const agentSecretsCarried = fopts.agentConfigSecrets && (built.bundle.agentConfig || []).some(function (c) { return c.redacted === false && c.redactions > 0; });
+    // Warn whenever a raw (un-redacted) agent-config rides an unencrypted bundle — NOT gated on
+    // the heuristic scanner's hit count, since it can miss a real key under a benign name.
+    const agentSecretsCarried = fopts.agentConfigSecrets && (built.bundle.agentConfig || []).some(function (c) { return c.redacted === false; });
     const hasSecrets = built.counts.accounts || built.counts.providers || agentSecretsCarried;
     if (passphrase) note(style.ok('🔒') + ' encrypted (AES-256-GCM); import with the same --passphrase-file.');
     else if (hasSecrets) note(style.warn('⚠️  This bundle CONTAINS SECRETS' + (agentSecretsCarried ? ' (incl. agent API keys)' : ' (login tokens)')) + ' — encrypt it (--passphrase-file <f>) or pipe through gpg, and delete it after importing.');
