@@ -1018,3 +1018,36 @@ counts memory/config; LAN receive/push summaries report providers+agents; stemme
 over-strip fixed (singular/plural converge); + test hardening (maxAttempts brute-force shutdown,
 wire-encryption assertion, every gitignore secret pattern, absolute/nested + symlink traversal,
 archive corrupt/0600). New modules: `src/secretpaths.js`; new helper: `fsutil.safeDestUnder`.
+
+---
+
+## Missing-feature audit (2026-07-07)
+
+A 5-dimension audit (CLI↔MCP↔docs parity, roadmap-open, domain/competitor, reliability, UX-safety;
+80 agents, each candidate verified against the code) found **67 real gaps**. The S-effort, high-value
+ones were fixed this session:
+
+**Fixed (this session):**
+- **Safety:** `remove` + `provider remove` now confirm before an irreversible delete (fail-closed
+  non-interactively); `fleet keys` (+ MCP `keyflip_fleet_keys`) audits the TOFU signing-key store
+  (fingerprint + ok/CHANGED/unpinned/offline) — origin-auth trust was previously unauditable.
+- **MCP CRUD parity:** `keyflip_account_remove`, `keyflip_provider_remove`, `keyflip_fleet_collect`
+  (all MUT+confirm). CLI `logout` verb added (was MCP-only). 60 tools, 0 invariant violations.
+- **Reliability:** `foreign` warns on an unflushed Cursor `-wal` instead of silently dropping the
+  newest chats; Cursor discovery now lists Windows/Linux paths, not just macOS; `keyflip chat` gates
+  on `platform!=='darwin'` (clear message on Windows vs a deep failure).
+- **Docs lockstep:** fleet origin-auth prose (README EN/TR); opencode + the full 6-agent set named;
+  `mcp --setup` prints the live tool count; new verbs in help; stale Windows/Copilot/roadmap notes
+  corrected.
+
+**Remaining backlog (tracked, not yet built):**
+- **MCP parity (P2/S–M):** `gateway`, `mcpreg`, `sync`, `share`, `speedtest`, `transfer` (LAN),
+  `autoswitch`, `link` have no MCP tool yet (some are legitimately CLI-only interactive/destructive).
+- **Domain features (P2/M–L):** account groups/tags (scoped `next` rotation), spend/quota budgeting +
+  alerts, import from `.env`/password managers, team/shared credential pool, shell auto-activation of
+  a directory pin, biometric/session-TTL unlock.
+- **Platform (device-gated):** Windows/Linux real-install validation of the app-auth crypto, native
+  tray, browser-cookie decrypt, dream scheduling; SSO live end-to-end.
+- **Epics (unbuilt, planned):** E1 universal surface support, E2 sub⇄API bridge (`keyflip serve`),
+  E3 model router (`keyflip route`), E4 config store (`keyflip config`), E5 TUI (`keyflip ui`),
+  G2 VS Code/JetBrains extension, full Cursor WAL-frame merge.
