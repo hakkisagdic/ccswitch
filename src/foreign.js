@@ -174,10 +174,21 @@ function parseYaml(text) {
 }
 
 // Normalize a foreign session (Buffer or string) into the unified shape. Returns { tool, ... }.
+// A SQLite DB in WAL mode keeps recent writes in a sibling `<db>-wal` file that this zero-dep reader
+// does NOT replay. If that file exists and is non-empty, the latest chats may be missing — surface a
+// warning so the user can quit the app (which checkpoints the WAL into the main DB) and re-run.
+function walNote(filePath) {
+  try {
+    if (!filePath) return null;
+    const st = fs.statSync(filePath + '-wal');
+    if (st && st.size > 0) return 'the Cursor DB has an unflushed -wal log (' + Math.round(st.size / 1024) + ' KB) that this reader cannot replay — the newest chats may be missing. Quit Cursor to checkpoint it, then re-run.';
+  } catch (e) { /* no -wal sibling — fully checkpointed */ }
+  return null;
+}
 function normalize(filePath, input) {
   const buf = asBuffer(input);
   const tool = detect(filePath, buf);
-  if (tool === 'cursor') return Object.assign({ tool: 'cursor' }, parseCursor(buf));
+  if (tool === 'cursor') { const out = Object.assign({ tool: 'cursor' }, parseCursor(buf)); const w = walNote(filePath); if (w) out.warning = w; return out; }
   if (tool === 'jsonl') return Object.assign({ tool: 'jsonl' }, require('./transcript').parse(buf.toString('utf8')));
   if (tool === 'json') return Object.assign({ tool: 'json' }, parseJson(buf.toString('utf8')));
   if (tool === 'yaml') return Object.assign({ tool: 'copilot' }, parseYaml(buf.toString('utf8')));
@@ -198,4 +209,4 @@ function resumeCommand(tool, id) {
   return (f && id) ? f(String(id)) : null;
 }
 
-module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, parseYaml: parseYaml, normalize: normalize, discover: discover, resumeCommand: resumeCommand, SESSION_SOURCES: SESSION_SOURCES };
+module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, parseYaml: parseYaml, normalize: normalize, walNote: walNote, discover: discover, resumeCommand: resumeCommand, SESSION_SOURCES: SESSION_SOURCES };

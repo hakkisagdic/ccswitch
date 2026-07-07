@@ -162,3 +162,17 @@ test('resumeCommand: documented per-tool resume commands (best-effort)', functio
   assert.strictEqual(foreign.resumeCommand('aider', 'x'), null, 'aider has no resume id');
   assert.strictEqual(foreign.resumeCommand('cursor', null), null, 'no id -> null');
 });
+
+// Post-audit reliability: a WAL-mode Cursor DB keeps recent writes in a sibling -wal file this
+// zero-dep reader can't replay — normalize() must WARN rather than silently drop the newest chats.
+test('foreign: a non-empty -wal sibling triggers a stale-data warning', function () {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kf-wal-'));
+  const db = path.join(dir, 'state.vscdb');
+  cp.execFileSync('sqlite3', [db], { input: "CREATE TABLE cursorDiskKV(key TEXT, value BLOB); INSERT INTO cursorDiskKV VALUES('composerData:x', '" + j({ conversation: [{ type: 1, text: 'hi' }] }) + "');" });
+  const buf = fs.readFileSync(db);
+  assert.strictEqual(foreign.normalize(db, buf).warning, undefined, 'no warning when fully checkpointed');
+  fs.writeFileSync(db + '-wal', Buffer.alloc(5000, 1)); // simulate an unflushed WAL
+  const w = foreign.normalize(db, buf).warning;
+  assert.ok(w && /wal/i.test(w), 'warns about the unflushed WAL');
+  assert.ok(/quit cursor/i.test(w), 'tells the user how to checkpoint it');
+});

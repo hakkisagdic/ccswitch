@@ -1943,6 +1943,7 @@ function cmdForeign(ctx, rest) {
   if (!file) return fail('usage: keyflip foreign <session-file> [--format md|html|json] [--out <file|->]\n  reads another agent\'s session log (message-event JSONL, generic JSON, Cursor SQLite, or an Aider .md).');
   let raw; try { raw = fs.readFileSync(file); } catch (e) { return fail('cannot read ' + file + ': ' + (e && e.message)); } // Buffer (Cursor is binary)
   let norm; try { norm = foreign.normalize(file, raw); } catch (e) { return fail(e.message); }
+  if (norm.warning && !JSON_MODE) print(style.warn('⚠ ') + norm.warning);
   const fmt = (flagVal(rest, '--format') || 'md').toLowerCase();
   let out, ext;
   if (fmt === 'html') { out = transcript.toHtml(norm, { id: norm.tool }); ext = 'html'; }
