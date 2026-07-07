@@ -13,6 +13,9 @@ const REGISTRY = [
   { id: 'cursor', label: 'Cursor', roots: ['.cursor/rules'] },
   { id: 'gemini', label: 'Gemini CLI', roots: ['.gemini/GEMINI.md'] },
   { id: 'codex', label: 'Codex CLI', roots: ['.codex/AGENTS.md', '.codex/memories'] },
+  // Copilot's memory is project-level (.github/copilot-instructions.md, AGENTS.md) and travels
+  // with its git repo, so no home-level memory roots — but it DOES have home-level config below.
+  { id: 'copilot', label: 'GitHub Copilot', roots: [] },
 ];
 // J1 config-tier: per-agent CONFIG files (MCP servers, settings). These CAN hold secrets, so
 // they are ALWAYS run through the secret scanner + redacted before carrying — the structure
@@ -21,6 +24,7 @@ const CONFIG_REGISTRY = [
   { id: 'cursor', files: ['.cursor/mcp.json'] },
   { id: 'gemini', files: ['.gemini/settings.json'] },
   { id: 'codex', files: ['.codex/config.toml'] },
+  { id: 'copilot', files: ['.copilot/config.json', '.copilot/mcp-config.json'] },
 ];
 const MEM_EXT = ['.md', '.mdc', '.txt'];
 

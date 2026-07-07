@@ -136,3 +136,20 @@ test('discover: finds foreign sessions at the known locations, existence-gated',
   assert.deepStrictEqual(tools, ['cursor', 'gemini', 'opencode']);
   assert.ok(found.every(function (f) { return f.path && f.mtime; }));
 });
+
+test('parseYaml (Copilot/generic): extracts the conversation array from YAML', function () {
+  const y = ['session: abc', 'model: gpt-4o', 'history:',
+    '  - role: user', '    text: reverse a list?',
+    '  - role: assistant', '    text: "use [::-1]"',
+    '  - role: user', '    text: thanks'].join('\n');
+  const n = foreign.normalize('workspace.yaml', y);
+  assert.strictEqual(n.tool, 'copilot');
+  assert.strictEqual(n.counts.messages, 3);
+  assert.deepStrictEqual(n.messages.map(function (m) { return m.role; }), ['user', 'assistant', 'user']);
+  assert.strictEqual(n.messages[1].text, 'use [::-1]');
+});
+
+test('detect: .yaml / workspace.yaml -> yaml (copilot)', function () {
+  assert.strictEqual(foreign.detect('workspace.yaml', 'session: x\n'), 'yaml');
+  assert.strictEqual(foreign.detect('x.yml', 'a: 1\n'), 'yaml');
+});

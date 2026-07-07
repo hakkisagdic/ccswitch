@@ -22,6 +22,7 @@ const SESSION_SOURCES = [
   { tool: 'cursor', files: ['Library/Application Support/Cursor/User/globalStorage/state.vscdb'], dirs: [{ base: 'Library/Application Support/Cursor/User/workspaceStorage', match: /state\.vscdb$/ }] },
   { tool: 'opencode', dirs: [{ base: '.local/share/opencode', match: /\.jsonl?$/ }] },
   { tool: 'gemini', dirs: [{ base: '.gemini/antigravity-cli', match: /transcript\.jsonl$/ }] },
+  { tool: 'copilot', dirs: [{ base: '.copilot/session-state', match: /workspace\.ya?ml$/ }] },
 ];
 function walkFind(dir, matchRe, budget, out) {
   if (budget.left <= 0) return;
@@ -65,6 +66,7 @@ function detect(filePath, input) {
     if (/"(messages|parts|conversation)"\s*:/.test(head)) return 'json';
   }
   if (firstLine[0] === '[' ) return 'json';
+  if (/\.ya?ml$/.test(p) || /workspace\.yaml$/.test(p)) return 'yaml';
   if (/\.md$/.test(p)) return 'aider';
   return null;
 }
@@ -137,9 +139,9 @@ function parseCursor(buf) {
   return { messages: messages, cwd: null, counts: countsOf(messages) };
 }
 
-// Generic JSON of messages (opencode + others): find the largest array of message-like objects.
-function parseJson(text) {
-  let doc; try { doc = JSON.parse(text); } catch (e) { throw new Error('not valid JSON'); }
+// Find the largest array of message-like objects anywhere in a parsed document, and map it to
+// the unified shape. Shared by JSON (opencode + others) and YAML (Copilot + others).
+function extractMessages(doc) {
   let best = null;
   (function scan(node) {
     if (Array.isArray(node)) {
@@ -148,12 +150,21 @@ function parseJson(text) {
       node.forEach(scan);
     } else if (node && typeof node === 'object') { Object.keys(node).forEach(function (k) { scan(node[k]); }); }
   })(doc);
-  const arr = best || [];
-  const messages = arr.map(function (x) {
+  const messages = (best || []).map(function (x) {
     const text = typeof x.message === 'string' ? x.message : textOf(x);
     return { role: roleOf(x), text: text, tools: [], ts: (x && (x.timestamp || x.time)) || null };
   }).filter(function (m) { return m.text; });
   return { messages: messages, cwd: (doc && doc.cwd) || null, counts: countsOf(messages) };
+}
+function parseJson(text) {
+  let doc; try { doc = JSON.parse(text); } catch (e) { throw new Error('not valid JSON'); }
+  return extractMessages(doc);
+}
+// Copilot / generic YAML: parse then find the conversation array (best-effort — Copilot's
+// session shape is NEEDS-VERIFICATION; the YAML reader itself is fixture-tested).
+function parseYaml(text) {
+  const doc = require('./yamlread').parse(text);
+  return extractMessages(doc);
 }
 
 // Normalize a foreign session (Buffer or string) into the unified shape. Returns { tool, ... }.
@@ -163,8 +174,9 @@ function normalize(filePath, input) {
   if (tool === 'cursor') return Object.assign({ tool: 'cursor' }, parseCursor(buf));
   if (tool === 'jsonl') return Object.assign({ tool: 'jsonl' }, require('./transcript').parse(buf.toString('utf8')));
   if (tool === 'json') return Object.assign({ tool: 'json' }, parseJson(buf.toString('utf8')));
+  if (tool === 'yaml') return Object.assign({ tool: 'copilot' }, parseYaml(buf.toString('utf8')));
   if (tool === 'aider') return Object.assign({ tool: 'aider' }, parseAider(buf.toString('utf8')));
-  throw new Error('unrecognized session format (supported: message-event JSONL, JSON, Cursor SQLite, Aider .md)');
+  throw new Error('unrecognized session format (supported: message-event JSONL, JSON, YAML, Cursor SQLite, Aider .md)');
 }
 
-module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, normalize: normalize, discover: discover, SESSION_SOURCES: SESSION_SOURCES };
+module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, parseYaml: parseYaml, normalize: normalize, discover: discover, SESSION_SOURCES: SESSION_SOURCES };

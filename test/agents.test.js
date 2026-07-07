@@ -243,3 +243,14 @@ test('bundle: --agent-config-secrets carries real keys; default redacts', functi
   const redacted = migrate.buildBundle(src, { agentConfig: true, noAccounts: true, noSessions: true, noProviders: true, noMemory: true, noConfig: true });
   assert.ok(JSON.stringify(redacted.bundle.agentConfig).indexOf('sk-proj-REALSECRET') === -1, 'default redacts');
 });
+
+test('config-tier: Copilot config (JSON) is collected + redacted', function () {
+  const ctx = makeCtx();
+  const dir = path.join(ctx.home, '.copilot'); fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ github: { token: 'ghp_SECRET1234567890abcdefghij' }, model: 'gpt-4o' }));
+  assert.ok(agents.presentAgentConfig(ctx).indexOf('copilot') !== -1);
+  const got = agents.collectAgentConfig(ctx, { only: ['copilot'] });
+  assert.ok(got.length >= 1 && got[0].redactions >= 1);
+  assert.strictEqual(secretscan.scanText(got[0].content).length, 0);
+  assert.ok(got[0].content.indexOf('gpt-4o') !== -1);
+});
