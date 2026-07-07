@@ -642,6 +642,16 @@ total, 0 fail):
 
 533 tests green (0 fail); 55 MCP tools, 0 confirm-invariant violations. Fleet batch cleared for commit.
 
+**Verified NON-issues (review watch list):** (a) `foreign.resumeCommand` shell-injection — the
+`--run` path uses `spawnSync(bin, args[])` (argv array, **no shell**); the id is a literal argv, and
+`foreign.resumeCommand` isn't wired to any exec. (b) `isEncBlob` v10→v11 widening — macOS still
+decrypts via `getSafeStoragePassword` (v10 CBC); a v11 blob on macOS just falls back to the allowlist
+org. **Tracked residual (by design, deferred):** the fleet trust boundary IS the shared passphrase —
+anyone holding it + rendezvous write access can *queue* a command. The interactive consent prompt
+(y/N unless `-y`) + RESERVED-name guard + replay ledger + id validation blunt every concrete exploit;
+true per-machine **origin authentication** (TOFU-pinned signing keys so a victim verifies *who* queued
+a command even against a leaked passphrase) is a larger design change, tracked as future work.
+
 ---
 
 ## E7 — Chat/session/memory lifecycle & cross-machine/-account/-service management
