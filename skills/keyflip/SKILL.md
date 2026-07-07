@@ -73,8 +73,8 @@ on a switch. Sessions are captured automatically during `onboard`/`login`.
 returns content snippets + an `orphan` flag), `keyflip_sessions_rebind` (folder-rename fix),
 `keyflip_sessions_archive`/`_unarchive`/`_archived`, `keyflip_sessions_export` (a chat → clean
 markdown/HTML/json for sharing), `keyflip_foreign_export` (normalize ANOTHER agent's session
-log — JSONL / Cursor SQLite / generic JSON / Aider — into the same view via a from-scratch
-zero-dep SQLite reader); cross-machine: `keyflip_migrate_export`/
+log — JSONL / Cursor SQLite / opencode+generic JSON / Copilot YAML / Aider MD — into the same view
+via from-scratch zero-dep SQLite + YAML readers); cross-machine: `keyflip_migrate_export`/
 `_import`/`_push`/`_pull` (export takes `agents:true` to also carry other agents' memory) and
 `keyflip_agents` (inspect); git versioning: `keyflip_history`/`_undo`/`_restore`. The mutating
 ones require `confirm: true`; `keyflip_login` opens a browser for the human. Only the
@@ -232,8 +232,8 @@ account; `keyflip provider off` restores it. Never put an API key in argv — us
   public key and REJECTS any command whose signature doesn't verify — so even a leaked passphrase can't
   let a forger command a machine. If a peer's key later CHANGES it's flagged as possible key
   substitution and its commands are rejected until `keyflip fleet trust <machine>` re-pins the new key
-  (consent-gated). (MCP: `keyflip_fleet_status` (read), `keyflip_fleet_switch` /
-  `keyflip_fleet_send_account` / `keyflip_fleet_trust` (need `confirm:true`).)
+  (consent-gated). (MCP: `keyflip_fleet_status` / `keyflip_fleet_keys` (read), `keyflip_fleet_switch` /
+  `keyflip_fleet_send_account` / `keyflip_fleet_collect` / `keyflip_fleet_trust` (need `confirm:true`).)
 - `keyflip consolidate [--watch]` — sync every account's chat index so each shows
   ALL conversations. The desktop app's store is locked while it runs, so a one-shot
   offers to close→sync→reopen the app; `--watch` re-syncs on an interval whenever the
@@ -318,7 +318,7 @@ live copies of the same account.
 | switch says an account is in use by live sessions | those PIDs are real running Claudes — ask the user before `--force` |
 | moving to a new machine | `keyflip migrate export bundle --passphrase-file f` (accounts + providers + all session transcripts) → `keyflip migrate import bundle --passphrase-file f` there — it MERGES with the sessions already on that machine (`--force` to overwrite). (`export`/`import` move accounts only.) Desktop-app/browser logins are machine-bound — re-capture via `keyflip onboard` |
 | chat history lost after renaming/moving a project folder ("working directory no longer exists") | `keyflip sessions rebind <old-path> <new-path>` — copies the transcripts to the new folder key, rewrites the old cwd inside them, and patches the desktop-app session records (run with Claude closed; restart it after). Old copies are backed up. |
-| also carry my OTHER agents' memory/config to the new machine | `keyflip agents` to see what's present, then `keyflip migrate export bundle --agents` (memory, markdown-only) and/or `--agent-config` (MCP/settings, **secret-scanned + redacted**) → import as usual. Carries Cursor/Gemini/Codex; auth/credential files never travel and config keys are redacted (re-enter on the target). |
+| also carry my OTHER agents' memory/config to the new machine | `keyflip agents` to see what's present, then `keyflip migrate export bundle --agents` (memory, markdown-only) and/or `--agent-config` (MCP/settings, **secret-scanned + redacted**) → import as usual. Carries Cursor/Gemini/Codex/Copilot/opencode/Aider; auth/credential files never travel and config keys are redacted (re-enter on the target). |
 | keyflip is misbehaving but accounts are fine | `keyflip reset --soft` — clears only runtime state (usage history, breakers, proxy state, caches, logs) and routes back to the subscription; **keeps saved accounts**. Confirm first (`--force` to skip). |
 | user wants a full wipe / remove keyflip | **`keyflip reset`** is a FACTORY reset — DELETES all keyflip data (accounts, providers, backups), app stays installed. `--logout [--no-desktop]` also signs out the live surfaces. `keyflip uninstall` removes the app (`--purge` also deletes data). All destructive — get consent, they prompt unless `--force`. |
 

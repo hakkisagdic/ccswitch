@@ -1,10 +1,12 @@
 # keyflip Roadmap
 
-> Status: **planning only.** Nothing in this file is implemented yet unless it
-> already ships in the current release (v1.5.0). This document is the agreed
-> backlog we will build from, in roughly the order below. Prices, star counts and
-> product details are a **mid‑2026 snapshot** and drift — treat them as
-> directional, re‑verify before building against any specific number.
+> Status: **mixed — shipped + planned.** Large parts of this file are now BUILT and in the
+> current release (account switching, providers/proxy, sessions, backup, migrate + LAN/WebDAV
+> transfer, the **fleet control plane with Ed25519 origin authentication**, foreign-session import,
+> Windows app-auth crypto, …); items marked ✅/◑ are done/partial, and ⬜/"Deferred"/"NEEDS-VERIFICATION"
+> are the remaining backlog, in roughly the order below. Prices, star counts and product details are a
+> **mid‑2026 snapshot** and drift — treat them as directional, re‑verify before building against any
+> specific number.
 >
 > Companion docs: [README.md](README.md) · [README.tr.md](README.tr.md) ·
 > [skills/keyflip/SKILL.md](skills/keyflip/SKILL.md). When any item here ships,

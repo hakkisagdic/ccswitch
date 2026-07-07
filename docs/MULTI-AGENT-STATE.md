@@ -55,8 +55,9 @@ bubble→message mapping (order from the composer header list, role from `type`)
 (opencode + others — largest array of `{role, text/content}` objects); **Aider**
 `.aider.chat.history.md` via a best-effort markdown parser. The Cursor/JSON/Aider mappings are
 NEEDS-VERIFICATION against a real install — the SQLite *reader* itself is fixture-verified.
-Deferred: **Copilot** (YAML — needs a parser). Each parser is isolated behind `detect()`, so
-adding a source later is one function + a fixture test.
+**Copilot** (YAML) now ships too — parsed via the from-scratch zero-dep `src/yamlread.js` and wired
+into `detect()`/`normalize()` (23/23 tests). Each parser is isolated behind `detect()`, so adding a
+source later is one function + a fixture test.
 
 Unified shape: `{ tool, sessionId, created_at, updated_at, resumable, resumeCommand, messages[], metadata }`.
 

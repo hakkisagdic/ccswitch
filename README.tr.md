@@ -14,9 +14,10 @@ Hesaplarınıza bir kez giriş yapın, sonra tekrar tekrar çıkış/giriş yapm
 > üçünde de CI-testli). **Masaüstü-uygulaması** özellikleri (desktop login
 > takası, Cowork, oturum birleştirme, gateway) uygulama verisini okur: **macOS
 > ve Windows'ta** çalışır (Linux'ta resmi masaüstü uygulaması yok). Uygulamanın
-> çerez/token'ını *çözmesi* gerekenler (uygulamanın hesabını otomatik algılama ve
-> `keyflip chat`) şimdilik **yalnız macOS** — Windows bunları DPAPI ile şifreler
-> (henüz eklemediğimiz farklı bir şema).
+> hesabını otomatik algılamanın artık bir **Windows yolu da var** (DPAPI + AES-GCM,
+> `src/wincrypt.js`, fixture-testli; kesin gerçek-kurulum yolları hâlâ cihazda
+> doğrulama bekliyor). Uygulamanın **tarayıcı** çerezlerini çözen `keyflip chat`
+> şimdilik **yalnız macOS** — bkz. [docs/PORTING.md](docs/PORTING.md).
 
 ---
 
@@ -142,7 +143,7 @@ keyflip migrate export <dosya> # hesap + provider + transkript + memory + config
                               #   altküme seç: --sessions <id,id> / --search T / --newer-than 7d / --only-sessions
                               #   --agents (memory) ve/veya --agent-config (MCP/ayarlar, redakte) ile diğer AI ajanları
                               #   veya --agent-config-secrets ile GERÇEK anahtarları kendi makinelerin arasında taşı (şifrele!)
-keyflip agents                # diğer ajanların memory + config'ini listele (Cursor/Gemini/Codex; sırlar redakte edilir)
+keyflip agents                # diğer ajanların memory + config'ini listele (Cursor/Gemini/Codex/Copilot/opencode/Aider; sırlar redakte edilir)
 keyflip settings [show|get <k>|set <k> <v>]   # ~/.claude/settings.json'ı gör/düzenle (`migrate` ile diğer makinelere gider)
 keyflip migrate import <dosya> # bu paketi bu makineyle BİRLEŞTİR (birleşim; --force üzerine yazar)
 keyflip migrate push --url <webdav>   # paketi başka makineye WebDAV üzerinden ilet (şifreli)
@@ -157,14 +158,29 @@ keyflip fleet status | panel   # TÜM makineleri tek ekranda gör — hesaplar, 
 keyflip fleet switch <makine> <hesap>   # UZAK makinenin hesabını değiştir (o makine push edince uygulanır)
 keyflip fleet send-account <hesap> --to <makine> [--from <makine>]   # hesabı dağıt (örn. C'nin hesabını B'ye, A'dan)
 keyflip fleet collect         # filoda yayınlanmış tüm hesapları bu makineye topla
-keyflip fleet trust <makine>  # meşru bir yeniden-anahtarlama SONRASI makinenin imza anahtarını yeniden sabitle ("origin auth")
+keyflip fleet keys            # her makinenin imza-anahtarı parmak izini denetle (ok / CHANGED / unpinned)
+keyflip fleet trust <makine>  # meşru bir yeniden-anahtarlama SONRASI makinenin imza anahtarını yeniden sabitle (aşağıdaki "Filo — origin authentication")
 keyflip consolidate [--watch] # her hesabın sohbet dizinini eşitle; her biri TÜM sohbetleri görsün
-keyflip remove <ad|numara>    # kayıtlı hesabı sil
+keyflip remove <ad|numara>    # kayıtlı hesabı sil (onay ister; --force ile atla)
+keyflip logout [--browser] [--desktop]   # canlı oturum(lar)dan çık — kayıtlı hesaplar korunur
 keyflip history | undo | restore <ref>   # git-versiyonlu config: her değişikliği incele / geri al / geri dön (sırlar asla commit edilmez)
 keyflip reset [--soft]        # FABRİKA sıfırlaması: TÜM keyflip verisini SİL (--soft hesapları korur)
 keyflip uninstall [--purge]   # keyflip'i bu makineden kaldır (--purge veriyi de siler)
 keyflip upgrade               # keyflip'in kendisini güncelle (kurulum yöntemini algılar)
 ```
+
+### Filo — origin authentication
+
+Filo, makineleri **şifreli paylaşılan bir klasör** üzerinden koordine eder; dolayısıyla parola tek
+başına bir komutu *kimin* kuyruğa aldığını kanıtlayamaz. Bu yüzden her makinenin bir **Ed25519 imza
+anahtarı** vardır: özel anahtar makineden asla çıkmaz (`0600`, asla paylaşılan klasörde/argv'de değil);
+açık anahtar status'te yayınlanır. Kuyruğa alınan her komut **imzalanır** ve alıcısına bağlanır; alıcı
+her peer'in açık anahtarını **ilk görüşte sabitler (TOFU)** ve sonra imzası doğrulanmayan, başka bir
+makineye adreslenmiş ya da anahtarı **değişmiş** bir peer'den gelen komutu **reddeder** (olası
+anahtar-değiştirme saldırısı). Böylece parola sızsa bile bir sahteci bir makineye komut veremez.
+Sabitlemeleri `keyflip fleet keys` ile denetle; bir makine meşru şekilde yeniden anahtarlandığında
+(temiz kurulum / sıfırlama) yeni anahtarını `keyflip fleet trust <makine>` ile yeniden sabitle
+(önce out-of-band doğrulaman için yeni anahtarın parmak izini yazdırır).
 
 Genel bayraklar: `--json` (makine-okunur stdout — tek JSON nesnesi, `schemaVersion: 1`,
 insan metni stderr'e; script/status-line için ideal) ve `--debug` (ayrıntılı log).
@@ -226,7 +242,7 @@ keyflip sessions archive <id|--older-than 30d>   # eski transkriptleri keyflip'e
 keyflip sessions distill <id>   # bir sohbeti kalıcı hatıraya damıt (`claude -p` ile); `keyflip memory` ile gözat
 keyflip sessions compact <id> [--apply]   # transkripti küçült: hacimli tool çıktısını ele, sohbeti koru (varsayılan dry-run)
 keyflip sessions export <id> [--format md|html|json]   # bir sohbeti temiz, paylaşılabilir belgeye çıkar (offline inceleme / arşiv)
-keyflip foreign <oturum-dosyası> [--format md|html|json]   # BAŞKA bir ajanın oturumunu (JSONL / Cursor SQLite / JSON / Aider) aynı görünüme normalize et
+keyflip foreign <oturum-dosyası> [--format md|html|json]   # BAŞKA bir ajanın oturumunu (JSONL / Cursor SQLite / opencode+genel JSON / Copilot YAML / Aider MD) aynı görünüme normalize et
 keyflip dream [--older-than 30d] [--archive] [--apply]   # "dreaming": eski sohbetleri tek geçişte damıt (+ arşivle); varsayılan dry-run
 keyflip recall "<sorgu>" [--answer]   # TÜM sohbetlerinde arama (BM25; --semantic=embeddings; --answer = `claude -p` ile atıflı sentez)
 keyflip dream schedule [--at 03:00] | unschedule | status   # dream'i her gece gözetimsiz koştur (launchd/cron)

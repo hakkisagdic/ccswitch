@@ -88,6 +88,7 @@ function usage() {
   print('                                 official flow and capture it (isolated — current login NOT');
   print('                                 disturbed; --fresh clears the browser first; --manual pastes');
   print('                                 the code/URL; --sso = enterprise SSO; --console = Console acct)');
+  print('  keyflip logout [--browser] [--desktop] [--close]   sign OUT of the live session(s) — saved accounts kept');
   print('  keyflip add [name] [--app]    save the account(s) you are logged into — Claude Code');
   print('                                 AND the desktop app, auto-detected. Once per account.');
   print('                                 (--app: desktop app only; name it if undetected)');
@@ -115,8 +116,8 @@ function usage() {
   print('                                 session transcripts to a new machine and MERGE (also: push/pull --url)');
   print('                                 add --agents (memory) / --agent-config (MCP+settings, redacted) for other AI agents');
   print('  keyflip agents                 list other agents\' memory + config keyflip can carry (Cursor/Gemini/Codex)');
-  print('  keyflip fleet init --dir <shared-folder> | push | status | switch <machine> <acct> | send-account <acct> --to <machine> [--from <machine>] | collect');
-  print('                                 manage ALL your machines from one screen (encrypted shared folder): remote switch, collect/distribute accounts, chat status');
+  print('  keyflip fleet init --dir <shared-folder> | push | status | switch <machine> <acct> | send-account <acct> --to <machine> [--from <machine>] | collect | keys | trust <machine> | panel');
+  print('                                 manage ALL your machines from one screen (encrypted shared folder): remote switch, collect/distribute accounts, chat status, signed origin-auth');
   print('  keyflip transfer serve [--receive] | pull [<host>] --code X | push <host> --code X   LIVE device-to-device over the LAN');
   print('                                 add --qr to `serve` to show a scannable QR of the pairing code');
   print('  keyflip consolidate [--watch]  sync every account\'s chat index so each shows ALL conversations');
@@ -504,10 +505,10 @@ async function cmdMcp(ctx, rest) {
     print('  Or in .mcp.json / mcp.json:');
     print(JSON.stringify({ mcpServers: { keyflip: { command: 'keyflip', args: ['mcp'] } } }, null, 2));
     print('');
-    print('20 tools cover the full surface — accounts (status/list/switch/next), providers');
-    print('(providers/provider_use/provider_add/test_provider), sessions (sessions/resume_command),');
-    print('diagnostics (doctor/usage_history), backup, skills (skills/skill_add/skill_remove), and');
-    print('the failover proxy (proxy_status/proxy_control).');
+    print(require('./mcp').TOOLS.length + ' tools cover the full surface — accounts (status/list/switch/next/add/account_remove),');
+    print('providers, sessions (sessions/resume/archive/distill), migrate + transfer, the FLEET control');
+    print('plane (fleet_status/switch/send_account/collect/keys/trust), other-agent memory (agents),');
+    print('diagnostics (doctor/usage_history), backup, skills, and the failover proxy.');
     print('Mutating tools require confirm=true — the agent is instructed to ask the user first.');
     return;
   }

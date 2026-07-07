@@ -13,10 +13,11 @@ Log in to several accounts once, then hop between them without repeatedly loggin
 > failover proxy, skills, MCP — is **cross-platform** (macOS/Linux/Windows,
 > CI-tested on all three). The **desktop-app** features (desktop login swap,
 > Cowork, session consolidation, gateway) read the Claude desktop app's data:
-> they run on **macOS and Windows** (Linux has no official desktop app), and the
-> ones that must *decrypt* the app's cookies/token (auto-detect the app's
-> account, and `keyflip chat`) are **macOS-only** for now — Windows encrypts
-> those with DPAPI, a different scheme we haven't wired up yet.
+> they run on **macOS and Windows** (Linux has no official desktop app).
+> Auto-detecting the app's account now has a **Windows path too** (DPAPI +
+> AES-GCM via `src/wincrypt.js`, fixture-tested; the exact real-install paths
+> still need on-device validation). `keyflip chat`, which decrypts the app's
+> **browser** cookies, is **macOS-only** for now — see [docs/PORTING.md](docs/PORTING.md).
 
 ---
 
@@ -142,7 +143,7 @@ keyflip migrate export <file> # bundle accounts + providers + transcripts + memo
                               #   select a subset: --sessions <id,id> / --search T / --newer-than 7d / --only-sessions
                               #   add --agents (memory) and/or --agent-config (MCP/settings, redacted) for other AI agents
                               #   or --agent-config-secrets to carry the REAL keys between your own machines (encrypt it!)
-keyflip agents                # list other agents' memory + config keyflip can carry (Cursor/Gemini/Codex; secrets redacted)
+keyflip agents                # list other agents' memory + config keyflip can carry (Cursor/Gemini/Codex/Copilot/opencode/Aider; secrets redacted)
 keyflip settings [show|get <k>|set <k> <v>]   # view/edit ~/.claude/settings.json (rides `migrate` to other machines)
 keyflip migrate import <file> # MERGE that bundle into this machine (union; --force overwrites)
 keyflip migrate push --url <webdav>   # relay the bundle to another machine via WebDAV (encrypted)
@@ -157,14 +158,29 @@ keyflip fleet status | panel   # see EVERY machine on one screen — accounts, q
 keyflip fleet switch <machine> <account>   # switch a REMOTE machine's account (applied on its next push)
 keyflip fleet send-account <acct> --to <machine> [--from <machine>]   # distribute an account (e.g. C's account to B, from A)
 keyflip fleet collect         # gather every account published across the fleet onto this machine
-keyflip fleet trust <machine> # re-pin a machine's signing key AFTER a legitimate re-key (see "origin auth" below)
+keyflip fleet keys            # audit every machine's signing-key fingerprint (ok / CHANGED / unpinned)
+keyflip fleet trust <machine> # re-pin a machine's signing key AFTER a legitimate re-key (see "Fleet — origin authentication" below)
 keyflip consolidate [--watch] # sync every account's chat index so each shows ALL conversations
-keyflip remove <name|number>  # delete a saved account
+keyflip remove <name|number>  # delete a saved account (confirms; --force to skip)
+keyflip logout [--browser] [--desktop]   # sign OUT of the live session(s) — saved accounts are kept
 keyflip history | undo | restore <ref>   # git-versioned config: inspect / undo / roll back any change (secrets never committed)
 keyflip reset [--soft]        # FACTORY reset: DELETE all keyflip data (--soft keeps accounts)
 keyflip uninstall [--purge]   # remove keyflip from this machine (--purge also deletes data)
 keyflip upgrade               # update keyflip itself (detects how it was installed)
 ```
+
+### Fleet — origin authentication
+
+The fleet coordinates machines through an **encrypted shared folder**, so the passphrase alone can't
+prove *who* queued a command. Each machine therefore owns an **Ed25519 signing key**: the private key
+never leaves the machine (`0600`, never the shared folder, never argv); the public key is published in
+its status. Every queued command is **signed** and bound to its recipient, and a receiver
+**trust-on-first-use pins** each peer's public key — then **rejects** any command whose signature
+doesn't verify, is addressed to another machine, or comes from a peer whose key **changed** (a
+possible key-substitution attack). So even a leaked passphrase can't let a forger command a machine.
+Audit the pins with `keyflip fleet keys`; after a machine legitimately re-keys (fresh install / reset)
+re-pin its new key with `keyflip fleet trust <machine>` (it prints the new key's fingerprint to verify
+out-of-band first).
 
 Global flags: `--json` (machine-readable stdout — one JSON object, `schemaVersion: 1`,
 human text to stderr; ideal for scripts/status lines) and `--debug` (verbose log).
@@ -228,7 +244,7 @@ keyflip sessions archive <id|--older-than 30d>   # move old transcripts into key
 keyflip sessions distill <id>   # summarize a chat into a durable keepsake (via `claude -p`); browse with `keyflip memory`
 keyflip sessions compact <id> [--apply]   # shrink a transcript: elide bulky tool output, keep the conversation (dry-run default)
 keyflip sessions export <id> [--format md|html|json]   # export a chat as a clean, shareable doc (offline review / archive)
-keyflip foreign <session-file> [--format md|html|json]   # normalize ANOTHER agent's session (JSONL / Cursor SQLite / JSON / Aider) into the same view
+keyflip foreign <session-file> [--format md|html|json]   # normalize ANOTHER agent's session (JSONL / Cursor SQLite / opencode+generic JSON / Copilot YAML / Aider MD) into the same view
 keyflip dream [--older-than 30d] [--archive] [--apply]   # "dreaming": distill (+ archive) old chats in one pass; dry-run by default
 keyflip recall "<query>" [--answer]   # search ALL your chats (BM25; --semantic=embeddings; --answer = a cited synthesis via `claude -p`)
 keyflip dream schedule [--at 03:00] | unschedule | status   # run the dream nightly, unattended (launchd/cron)
