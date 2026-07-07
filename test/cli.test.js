@@ -295,3 +295,26 @@ test('add --app gives a clear, actionable hint when the account cannot be identi
   assert.notStrictEqual(r.status, 0);
   assert.match(r.stderr, /Open the Claude desktop app and confirm it is signed in/);
 });
+
+// Post-audit safety: destructive `remove` must not silently delete non-interactively (no undo).
+test('remove is confirm-gated: refuses non-interactively without --force, but --force deletes', function () {
+  const home = setupHome();
+  run(home, ['add']); // saves "alice"
+  const refused = run(home, ['remove', 'alice']);
+  assert.match((refused.stderr || '') + (refused.stdout || ''), /refusing to delete|--force/i, 'refuses without a flag');
+  assert.doesNotMatch(run(home, ['list']).stdout, /none yet/i, 'account still saved after a refused delete');
+  const forced = run(home, ['remove', 'alice', '--force']);
+  assert.strictEqual(forced.status, 0);
+  assert.match(run(home, ['list']).stdout, /none yet/i, 'saved account gone after --force');
+});
+
+// Reverse-parity fix: a `logout` verb exists (previously MCP-only) and keeps saved accounts.
+test('logout verb exists, is confirm-gated, and KEEPS saved accounts', function () {
+  const home = setupHome();
+  run(home, ['add']); // "alice"
+  const refused = run(home, ['logout']);
+  assert.match((refused.stderr || '') + (refused.stdout || ''), /refusing to log out|-y/i, 'refuses non-interactively without -y');
+  const done = run(home, ['logout', '-y']);
+  assert.strictEqual(done.status, 0, 'logout -y succeeds');
+  assert.match(run(home, ['list']).stdout, /alice/, 'saved account is kept after logout');
+});

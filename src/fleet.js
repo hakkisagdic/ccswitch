@@ -128,6 +128,25 @@ function reconcileKeys(ctx, statuses) {
 // Short SHA-256 fingerprint of a public key — shown at trust time so a re-key can be verified
 // out-of-band (compare against the fingerprint the other machine prints).
 function fingerprint(pubB64) { try { return crypto.createHash('sha256').update(Buffer.from(String(pubB64), 'base64')).digest('hex').replace(/(..)/g, '$1:').slice(0, 23); } catch (e) { return '?'; } }
+// Audit view of the TOFU key store: every pinned/published machine, its fingerprint, and whether the
+// currently-published key still MATCHES the pin (ok / CHANGED = possible substitution / unpinned /
+// offline = pinned but not currently publishing). Read-only — for `fleet keys` and its MCP tool.
+function keyReport(ctx, statuses) {
+  const known = knownKeys(ctx);
+  const published = Object.create(null);
+  (Array.isArray(statuses) ? statuses : []).forEach(function (s) { if (s && safeId(s.machineId) && isPubB64(s.pubKey)) published[s.machineId] = { key: s.pubKey, name: scrub(s.name, 80) || s.machineId }; });
+  const ids = Object.keys(known);
+  Object.keys(published).forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+  return ids.sort().map(function (id) {
+    const pin = known[id], pub = published[id];
+    return {
+      machineId: id, name: (pub && pub.name) || id,
+      pinned: pin ? fingerprint(pin) : null,
+      published: pub ? fingerprint(pub.key) : null,
+      status: !pin ? 'unpinned' : !pub ? 'offline' : (pin === pub.key ? 'ok' : 'CHANGED'),
+    };
+  });
+}
 // Deliberately (re)pin a machine's current published key — used after a LEGITIMATE re-key, only on
 // explicit user consent (the CLI `fleet trust` command). This is the sole way a pinned key changes.
 function trustKey(ctx, machineId, pubB64) {
@@ -374,7 +393,7 @@ module.exports = {
   buildStatus: buildStatus, publish: publish, readFleet: readFleet,
   normalizeStatus: normalizeStatus, sanitizeStatus: sanitizeStatus,
   machineKeys: machineKeys, publicKey: publicKey, signCommand: signCommand, verifyCommand: verifyCommand,
-  knownKeys: knownKeys, reconcileKeys: reconcileKeys, checkOrigin: checkOrigin, trustKey: trustKey, fingerprint: fingerprint,
+  knownKeys: knownKeys, reconcileKeys: reconcileKeys, checkOrigin: checkOrigin, trustKey: trustKey, fingerprint: fingerprint, keyReport: keyReport,
   queue: queue, readInbox: readInbox, clearInbox: clearInbox, applyCommand: applyCommand,
   wasApplied: wasApplied, markApplied: markApplied, commandFresh: commandFresh,
   accountFrom: accountFrom, newReplies: newReplies, saveSeen: saveSeen,

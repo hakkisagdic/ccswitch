@@ -569,6 +569,63 @@ const TOOLS = [
     },
   },
   {
+    name: 'keyflip_fleet_keys', title: 'Audit fleet machine signing keys (origin-auth trust state)',
+    description: 'List every fleet machine\'s TOFU-pinned Ed25519 signing-key fingerprint and whether the machine\'s currently-published key still MATCHES the pin (status: ok / CHANGED = possible key substitution / unpinned / offline). Read-only — use to audit the origin-auth trust store before trusting or acting on a machine.',
+    inputSchema: { type: 'object', properties: { passphrase_file: { type: 'string' } }, required: ['passphrase_file'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) {
+      const fleet = require('./fleet');
+      const b = fleet.bus(ctx, { passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() });
+      return { keys: fleet.keyReport(ctx, fleet.readFleet(ctx, b)) };
+    },
+  },
+  {
+    name: 'keyflip_fleet_collect', title: 'Gather every account published across the fleet onto this machine',
+    description: 'Import EVERY account that fleet machines have published WITH credentials (via `fleet push --with-secrets`) onto THIS machine, deduped by name. Existing accounts are kept unless force=true. Mutating (writes login secrets locally) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { passphrase_file: { type: 'string' }, force: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['passphrase_file', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      const fleet = require('./fleet'); const transfer = require('./transfer');
+      const b = fleet.bus(ctx, { passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() });
+      const seen = Object.create(null); const toImport = [];
+      fleet.readFleet(ctx, b).forEach(function (s) { Object.keys((s.creds) || {}).forEach(function (name) { if (seen[name]) return; seen[name] = 1; const a = fleet.accountFrom(s, name); if (a) toImport.push(a); }); });
+      if (!toImport.length) throw new Error('no accounts published with credentials across the fleet (machines must `keyflip fleet push --with-secrets`)');
+      const l = await lock.acquire(ctx.configDir);
+      let res; try { res = transfer.applyImport(ctx, { format: transfer.FORMAT, version: transfer.VERSION, accounts: toImport }, { force: !!args.force }); } finally { l.release(); }
+      return { collected: res };
+    },
+  },
+  {
+    name: 'keyflip_account_remove', title: 'Delete a saved account',
+    description: 'Permanently delete a saved account and its stored credential from THIS machine. IRREVERSIBLE — the credential cannot be recovered. Refuses if the account is the active one that a running Claude session is using (close it first, or force=true). Mutating + destructive — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Account name (from keyflip_list).' }, force: { type: 'boolean', description: 'Delete even if it is the active account in use.' }, confirm: confirmProp.confirm }, required: ['name', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      const name = core.resolveProfile(ctx, String(args.name));
+      if (!name) throw new Error("no such account: '" + args.name + "' (use keyflip_list)");
+      const em = profiles.email(ctx.configDir, name);
+      if (!args.force && em && em === core.currentEmail(ctx)) {
+        const live = require('./appctl').claudeInstances(ctx.home);
+        if (live.length) throw new Error("'" + em + "' is the active account " + live.length + ' running Claude session(s) are using — close them first, or set force=true');
+      }
+      const l = await lock.acquire(ctx.configDir);
+      try { core.removeProfile(ctx, name); } finally { l.release(); }
+      return { removed: name };
+    },
+  },
+  {
+    name: 'keyflip_provider_remove', title: 'Delete a saved provider',
+    description: 'Permanently delete a saved provider endpoint and its stored API key/bearer from THIS machine. IRREVERSIBLE. Mutating + destructive — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Provider name (from keyflip_providers).' }, confirm: confirmProp.confirm }, required: ['name', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      const provider = require('./provider');
+      if (!provider.exists(ctx, String(args.name))) throw new Error("no such provider: '" + args.name + "' (use keyflip_providers)");
+      const l = await lock.acquire(ctx.configDir);
+      try { provider.remove(ctx, String(args.name)); } finally { l.release(); }
+      return { removed: String(args.name) };
+    },
+  },
+  {
     name: 'keyflip_agents', title: 'List other agents\' memory + config keyflip can carry',
     description: 'Report which OTHER AI agents have files on THIS machine that keyflip can carry across machines: MEMORY (Cursor `~/.cursor/rules/`, Gemini `~/.gemini/GEMINI.md`, Codex `~/.codex/AGENTS.md`+`memories/` — markdown, no secrets) and CONFIG (`~/.cursor/mcp.json`, `~/.gemini/settings.json`, `~/.codex/config.toml` — carried ONLY secret-scanned + redacted). Read-only; feed into keyflip_migrate_export with agents=true and/or agent_config=true.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,

@@ -618,8 +618,14 @@ async function cmdProvider(ctx, rest) {
     case 'use': return withLock(ctx, function () { return cmdProviderUse(ctx, args[0]); }, 'provider');
     case 'off': case 'official': return withLock(ctx, function () { return cmdProviderUse(ctx, 'official'); }, 'provider');
     case 'remove': case 'rm':
-      return withLock(ctx, function () {
+      return withLock(ctx, async function () {
         if (!provider.exists(ctx, args[0])) return fail("no such provider: '" + (args[0] || '') + "'");
+        // Removing a provider drops its stored API key/bearer — confirm unless forced.
+        const forced = args.indexOf('--force') !== -1 || args.indexOf('-y') !== -1 || args.indexOf('--yes') !== -1;
+        if (!forced && !JSON_MODE) {
+          if (!process.stdin.isTTY) return fail("refusing to delete provider '" + args[0] + "' non-interactively — pass --force to confirm.");
+          if (!(await confirm('Delete provider ' + style.bold(args[0]) + '? Its stored key is removed for good. [y/N] '))) { print('Cancelled.'); return; }
+        }
         provider.remove(ctx, args[0]); print('🗑  removed provider: ' + args[0]);
       }, 'provider');
     default: return fail("unknown: keyflip provider " + sub + " (use: add | list | use | off | remove)");
@@ -1231,7 +1237,11 @@ function cmdCowork(ctx, rest) {
 // EXPERIMENTAL: read claude.ai cloud Chat conversations (per active account).
 async function cmdChat(ctx, rest) {
   const chat = require('./chat');
-  if (!ctx.appDataDir) return fail('reading claude.ai Chat needs the desktop app (its session cookie) — macOS only');
+  // Reading claude.ai chats decrypts the desktop app's session cookie via the macOS keychain — it is
+  // macOS-only for now. Gate on the PLATFORM (not just appDataDir, which is also set on Windows) so
+  // Windows/Linux get a clear message instead of a confusing failure deep in the cookie decrypt.
+  if (ctx.platform !== 'darwin') return fail('reading claude.ai Chat is macOS-only for now (Windows/Linux cookie decryption is not wired up yet — see docs/PORTING.md).');
+  if (!ctx.appDataDir) return fail('reading claude.ai Chat needs the Claude desktop app installed (its session cookie).');
   const sub = rest[0];
   try {
     if (sub === 'get') {
@@ -1846,6 +1856,21 @@ async function cmdFleet(ctx, rest) {
     return;
   }
 
+  if (sub === 'keys') {
+    // Audit the TOFU signing-key store: fingerprints + whether each machine's published key still
+    // matches its pin. The one read surface for the origin-auth trust state.
+    const statuses = fleet.readFleet(ctx, b);
+    const rep = fleet.keyReport(ctx, statuses);
+    if (JSON_MODE) { jsonOut({ keys: rep }); return; }
+    if (!rep.length) { print(style.dim('No machine signing keys seen yet. Run `keyflip fleet push` on each machine.')); return; }
+    print(style.bold('Fleet signing keys') + ' ' + style.dim('(TOFU-pinned; verify a CHANGED key out-of-band before `fleet trust`):'));
+    rep.forEach(function (r) {
+      const mark = r.status === 'ok' ? style.ok('●') : r.status === 'CHANGED' ? style.bad('✗') : style.dim('○');
+      print('  ' + mark + ' ' + style.bold(String(r.name).padEnd(14)) + ' ' + (r.pinned || style.dim('(unpinned)')) + '  ' + style.dim(r.status) + (r.status === 'CHANGED' ? '  ' + style.warn('→ `keyflip fleet trust ' + r.machineId + '`') : ''));
+    });
+    return;
+  }
+
   if (sub === 'trust') {
     // Re-pin a machine's signing key AFTER a legitimate re-key (the only sanctioned way a pinned key
     // changes). Guarded by consent when the key actually differs from what we pinned before.
@@ -1895,7 +1920,7 @@ async function cmdFleet(ctx, rest) {
     return;
   }
 
-  return fail('usage: keyflip fleet <init|push|status|switch|send-account|collect|trust|panel> …  (see `keyflip fleet` help)');
+  return fail('usage: keyflip fleet <init|push|status|switch|send-account|collect|keys|trust|panel> …  (see `keyflip fleet` help)');
 }
 
 // Epic F: normalize ANOTHER agent's session file (JSONL, or an Aider .md) into keyflip's
@@ -2994,6 +3019,24 @@ async function logoutSurfaces(ctx, opts) {
   return out;
 }
 
+// `keyflip logout [--browser] [--desktop] [--close] [-y]` — sign OUT of the LIVE session(s) while
+// KEEPING every saved account (a friendlier, discoverable front door than `reset --logout`).
+async function cmdLogout(ctx, rest) {
+  const browser = rest.indexOf('--browser') !== -1 || rest.indexOf('--all') !== -1;
+  const desktop = rest.indexOf('--desktop') !== -1 || rest.indexOf('--all') !== -1;
+  const closeApps = rest.indexOf('--close') !== -1;
+  const forced = rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1 || rest.indexOf('--force') !== -1;
+  const names = ['Claude Code (CLI)'].concat(browser ? ['browser claude.ai'] : []).concat(desktop ? ['desktop app'] : []);
+  if (!forced && !JSON_MODE) {
+    if (!process.stdin.isTTY) return fail('refusing to log out non-interactively — pass -y.');
+    print('Sign out of the live ' + names.join(' + ') + ' session(s)? Your saved keyflip accounts are KEPT — switch back anytime.');
+    if (!(await confirm('Continue? [y/N] '))) { print('Cancelled.'); return; }
+  }
+  const out = await withLock(ctx, function () { return logoutSurfaces(ctx, { cli: true, browser: browser, desktop: desktop, closeApps: closeApps }); });
+  if (JSON_MODE) { jsonOut({ loggedOut: out }); return; }
+  if (!out.length) print(style.dim('Nothing live to sign out.'));
+}
+
 // `keyflip reset` — FACTORY reset: DELETE all keyflip data (saved accounts,
 // providers, backups, history, runtime state) while keeping keyflip installed.
 // `--soft` keeps your accounts and only clears runtime state (proxy/breaker/cache/
@@ -3330,6 +3373,8 @@ async function dispatch(ctx, cmd, rest) {
         return withLock(ctx, function () { return cmdOnboard(ctx, rest); });
       case 'login':
         return withLock(ctx, function () { return cmdLogin(ctx, rest); });
+      case 'logout':
+        return cmdLogout(ctx, rest);
       case 'list':
         return cmdList(ctx, rest);
       case 'status':
@@ -3337,7 +3382,7 @@ async function dispatch(ctx, cmd, rest) {
       case 'next':
         return withLock(ctx, function () { return cmdNext(ctx, rest); });
       case 'remove':
-        return withLock(ctx, function () {
+        return withLock(ctx, async function () {
           const n = core.resolveProfile(ctx, rest[0]);
           if (!n) return fail("no such account: '" + (rest[0] || '') + "'");
           // Never yank the account live Claude sessions are using out from under them.
@@ -3348,6 +3393,13 @@ async function dispatch(ctx, cmd, rest) {
               return fail("'" + em + "' is the account " + live.length + ' running Claude session(s) are using ' +
                 '(pid ' + live.map(function (i) { return i.pid; }).join(', ') + ') — close them first, or pass --force.');
             }
+          }
+          // Deleting a credential is IRREVERSIBLE — confirm unless forced. Non-interactive without a
+          // flag fails closed rather than silently destroying an account.
+          const forced = rest.indexOf('--force') !== -1 || rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
+          if (!forced && !JSON_MODE) {
+            if (!process.stdin.isTTY) return fail("refusing to delete '" + n + "'" + (em ? ' (' + em + ')' : '') + ' non-interactively — pass --force to confirm.');
+            if (!(await confirm('Delete account ' + style.bold(n) + (em ? ' (' + em + ')' : '') + '? Its saved credential is removed for good. [y/N] '))) { print('Cancelled.'); return; }
           }
           core.removeProfile(ctx, n);
           logmod.log('removed profile ' + n);

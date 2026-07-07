@@ -18,8 +18,14 @@ const path = require('path');
 // Best-effort locations of OTHER agents' session stores (relative to $HOME). Existence-gated,
 // so a machine without a given tool simply yields nothing. Paths are NEEDS-VERIFICATION —
 // confirm on a real install; adding/fixing one is a one-line change.
+// Cursor lives under a platform-specific base (macOS Application Support / Windows AppData\Roaming /
+// Linux .config). All variants are listed and existence-gated, so the right one matches per OS and
+// the others simply yield nothing — no platform branch needed.
+const CURSOR_BASES = ['Library/Application Support/Cursor', 'AppData/Roaming/Cursor', '.config/Cursor'];
 const SESSION_SOURCES = [
-  { tool: 'cursor', files: ['Library/Application Support/Cursor/User/globalStorage/state.vscdb'], dirs: [{ base: 'Library/Application Support/Cursor/User/workspaceStorage', match: /state\.vscdb$/ }] },
+  { tool: 'cursor',
+    files: CURSOR_BASES.map(function (b) { return b + '/User/globalStorage/state.vscdb'; }),
+    dirs: CURSOR_BASES.map(function (b) { return { base: b + '/User/workspaceStorage', match: /state\.vscdb$/ }; }) },
   { tool: 'opencode', dirs: [{ base: '.local/share/opencode', match: /\.jsonl?$/ }] },
   { tool: 'gemini', dirs: [{ base: '.gemini/antigravity-cli', match: /transcript\.jsonl$/ }] },
   { tool: 'copilot', dirs: [{ base: '.copilot/session-state', match: /workspace\.ya?ml$/ }] },

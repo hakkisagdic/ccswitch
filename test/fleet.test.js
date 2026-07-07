@@ -324,6 +324,22 @@ test('origin-auth: a command signed FOR one machine is REJECTED when replayed in
   assert.ok(fleet.checkOrigin(B, cmd, recB).ok, 'the same command is valid on its intended target B');
 });
 
+test('fleet keys: keyReport shows ok / CHANGED / offline per machine (auditability)', function () {
+  const dir = sharedDir();
+  const A = machine('alpha', dir), B = machine('beta', dir);
+  fleet.publish(A, busOf(A, dir), {});
+  fleet.reconcileKeys(B, fleet.readFleet(B, busOf(B, dir))); // B pins A
+  let rep = fleet.keyReport(B, fleet.readFleet(B, busOf(B, dir)));
+  const a1 = rep.find(function (r) { return r.name === 'alpha'; });
+  assert.strictEqual(a1.status, 'ok');
+  assert.ok(/^[0-9a-f:]+$/.test(a1.pinned), 'shows a fingerprint');
+  // A re-keys -> the audit must surface it as CHANGED
+  fs.unlinkSync(path.join(A.configDir, 'fleet-key.json'));
+  fleet.publish(A, busOf(A, dir), {});
+  rep = fleet.keyReport(B, fleet.readFleet(B, busOf(B, dir)));
+  assert.strictEqual(rep.find(function (r) { return r.name === 'alpha'; }).status, 'CHANGED');
+});
+
 test('origin-auth hardening: TOFU roster is prototype-pollution safe; fingerprint is stable hex', function () {
   const A = machine('alpha', sharedDir());
   const pub = fleet.publicKey(A);
