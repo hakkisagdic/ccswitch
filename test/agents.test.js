@@ -254,3 +254,14 @@ test('config-tier: Copilot config (JSON) is collected + redacted', function () {
   assert.strictEqual(secretscan.scanText(got[0].content).length, 0);
   assert.ok(got[0].content.indexOf('gpt-4o') !== -1);
 });
+
+test('config-tier: opencode (JSON) + aider (YAML) config are detected + redacted', function () {
+  const ctx = makeCtx();
+  fs.mkdirSync(path.join(ctx.home, '.config', 'opencode'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.home, '.config', 'opencode', 'opencode.json'), JSON.stringify({ apiKey: 'sk-ant-api03-SECRET1234567890abcd', model: 'x' }));
+  fs.writeFileSync(path.join(ctx.home, '.aider.conf.yml'), 'openai-api-key: sk-proj-SECRET1234567890abcd\nmodel: gpt-4o\n');
+  const present = agents.presentAgentConfig(ctx);
+  assert.ok(present.indexOf('opencode') !== -1 && present.indexOf('aider') !== -1);
+  const cfg = agents.collectAgentConfig(ctx, { only: ['opencode', 'aider'] });
+  cfg.forEach(function (c) { assert.strictEqual(secretscan.scanText(c.content).length, 0, c.agent + ' redacted'); });
+});

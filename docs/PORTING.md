@@ -36,8 +36,11 @@ Support` paths and Keychain service/account.
   (zero-dep, current-user scope; the shell runner is injectable for tests).
 - `decryptValue(value, key)` handles `v10`/`v11` = `AES-256-GCM` (3-byte prefix + 12-byte nonce +
   ciphertext + 16-byte tag) — round-trip-verified against Chromium's exact encryption.
-- **Remaining (device-gated):** wire these into `appauth.js` account detection on a real Windows
-  box (the reader now exists; the macOS path is untouched). **v20 (app-bound)** still can't be
+- ✅ WIRED (2026-07-07): `appauth.detectAppAccount` now takes a **win32 branch** — if the app's
+  token cache is `v10`/`v11`, it reads `<appDataDir>/Local State` → `wincrypt.masterKey` →
+  `wincrypt.decryptValue` (fixture-tested end-to-end with an injected DPAPI). The macOS Keychain
+  path is byte-identical. **Remaining (device-gated):** confirm the exact Local State + token-cache
+  locations/field names on a real Windows Claude install. **v20 (app-bound)** still can't be
   user-decrypted → the snapshot/restore fallback (copy encrypted rows verbatim) applies.
 - Cookies DB: `%LOCALAPPDATA%\Google\Chrome\User Data\Default\Network\Cookies` (Brave/Edge analogous).
 

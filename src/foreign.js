@@ -179,4 +179,17 @@ function normalize(filePath, input) {
   throw new Error('unrecognized session format (supported: message-event JSONL, JSON, YAML, Cursor SQLite, Aider .md)');
 }
 
-module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, parseYaml: parseYaml, normalize: normalize, discover: discover, SESSION_SOURCES: SESSION_SOURCES };
+// Best-effort command to CONTINUE a session in its native tool (documented per tool; the
+// session id mapping is NEEDS-VERIFICATION). Returns null when the tool has no resume.
+const RESUME = {
+  cursor: function (id) { return 'cursor agent --resume ' + id; },
+  copilot: function (id) { return 'copilot --resume=' + id; },
+  opencode: function (id) { return 'opencode --session ' + id; },
+  jsonl: function (id) { return 'claude --resume ' + id; }, // Claude Code / Gemini-style
+};
+function resumeCommand(tool, id) {
+  const f = RESUME[tool];
+  return (f && id) ? f(String(id)) : null;
+}
+
+module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, parseYaml: parseYaml, normalize: normalize, discover: discover, resumeCommand: resumeCommand, SESSION_SOURCES: SESSION_SOURCES };

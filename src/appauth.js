@@ -60,6 +60,22 @@ function isV10(b64) {
   try { return Buffer.from(String(b64), 'base64').slice(0, 3).toString() === 'v10'; }
   catch (e) { return false; }
 }
+// v10 (macOS/Chromium) or v11 (Windows) encrypted-value prefix.
+function isEncBlob(b64) {
+  try { const p = Buffer.from(String(b64), 'base64').slice(0, 3).toString(); return p === 'v10' || p === 'v11'; }
+  catch (e) { return false; }
+}
+// Windows: decrypt the app's AES-256-GCM token cache using the DPAPI-protected master key from
+// the Electron "Local State" file. Isolated + gated to win32; ctx.dpapi is injectable for tests.
+function decryptAppBlobWin(ctx, b64) {
+  const win = require('./wincrypt');
+  const lsPath = ctx.localStatePath || (ctx.appDataDir ? path.join(ctx.appDataDir, 'Local State') : null);
+  if (!lsPath) return null;
+  let ls; try { ls = fs.readFileSync(lsPath, 'utf8'); } catch (e) { return null; }
+  const key = win.masterKey(ls, ctx.dpapi ? { unprotect: ctx.dpapi } : {});
+  if (!key) return null;
+  return win.decryptValue(b64, key);
+}
 function decryptBlob(b64, password) {
   try {
     const buf = Buffer.from(String(b64), 'base64');
@@ -150,13 +166,20 @@ function detectAppAccount(ctx) {
 
   let blob = null;
   ['oauth:tokenCacheV2', 'oauth:tokenCache'].forEach(function (k) {
-    if (!blob && typeof cfg[k] === 'string' && isV10(cfg[k])) blob = cfg[k];
+    if (!blob && typeof cfg[k] === 'string' && isEncBlob(cfg[k])) blob = cfg[k]; // v10 (macOS) or v10/v11 (Windows GCM)
   });
-  if (!blob) return fromConfigOnly('no-token-cache'); // no v10 blob -> config-only (avoids a Keychain prompt)
-  const pw = getSafeStoragePassword(ctx);
-  if (!pw) return fromConfigOnly('keychain-locked');
-  const text = decryptBlob(blob, pw);
-  if (!text) return fromConfigOnly('decrypt-failed');
+  if (!blob) return fromConfigOnly('no-token-cache'); // no encrypted blob -> config-only (avoids a Keychain prompt)
+  let text;
+  if (ctx.platform === 'win32') {
+    // Windows: the value is AES-256-GCM under the DPAPI-protected master key (no Keychain).
+    text = decryptAppBlobWin(ctx, blob);
+    if (!text) return fromConfigOnly('decrypt-failed');
+  } else {
+    const pw = getSafeStoragePassword(ctx);
+    if (!pw) return fromConfigOnly('keychain-locked');
+    text = decryptBlob(blob, pw);
+    if (!text) return fromConfigOnly('decrypt-failed');
+  }
 
   const uuids = []; let m;
   const re = new RegExp(UUID_RE.source, 'g');
@@ -349,6 +372,8 @@ module.exports = {
   detectAppAccount: detectAppAccount,
   cookiesLookLoggedIn: cookiesLookLoggedIn,
   decryptBlob: decryptBlob,
+  decryptAppBlobWin: decryptAppBlobWin,
+  isEncBlob: isEncBlob,
   configPath: configPath,
   profilePath: profilePath,
   cookiesPath: cookiesPath,

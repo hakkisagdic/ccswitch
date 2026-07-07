@@ -153,3 +153,12 @@ test('detect: .yaml / workspace.yaml -> yaml (copilot)', function () {
   assert.strictEqual(foreign.detect('workspace.yaml', 'session: x\n'), 'yaml');
   assert.strictEqual(foreign.detect('x.yml', 'a: 1\n'), 'yaml');
 });
+
+test('resumeCommand: documented per-tool resume commands (best-effort)', function () {
+  assert.strictEqual(foreign.resumeCommand('cursor', 'C1'), 'cursor agent --resume C1');
+  assert.strictEqual(foreign.resumeCommand('copilot', 'abc'), 'copilot --resume=abc');
+  assert.strictEqual(foreign.resumeCommand('opencode', 'ses_1'), 'opencode --session ses_1');
+  assert.strictEqual(foreign.resumeCommand('jsonl', 'x'), 'claude --resume x');
+  assert.strictEqual(foreign.resumeCommand('aider', 'x'), null, 'aider has no resume id');
+  assert.strictEqual(foreign.resumeCommand('cursor', null), null, 'no id -> null');
+});

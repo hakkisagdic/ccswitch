@@ -258,3 +258,21 @@ test('detectAppAccount returns unresolved-org (not a stale org) when the token n
   assert.strictEqual(det.org, null);
   assert.strictEqual(det.reason, 'unresolved-org');
 });
+
+// Windows: the app's token cache is AES-256-GCM under a DPAPI-protected master key (no Keychain).
+// The macOS path is untouched; this covers the gated win32 branch with an injected DPAPI decryptor.
+const crypto = require('crypto');
+const os = require('os');
+test('decryptAppBlobWin recovers a v10 AES-256-GCM token cache via the DPAPI master key', function () {
+  const key = crypto.randomBytes(32);
+  const nonce = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', key, nonce);
+  const ct = Buffer.concat([c.update(Buffer.from('org-abc-uuid'), 'utf8'), c.final()]);
+  const blob = Buffer.concat([Buffer.from('v10'), nonce, ct, c.getAuthTag()]).toString('base64');
+  const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kf-winapp-'));
+  fs.writeFileSync(path.join(appDataDir, 'Local State'), JSON.stringify({ os_crypt: { encrypted_key: Buffer.concat([Buffer.from('DPAPI'), Buffer.from('enc')]).toString('base64') } }));
+  const ctx = { platform: 'win32', appDataDir: appDataDir, dpapi: function () { return key; } };
+  assert.strictEqual(appauth.decryptAppBlobWin(ctx, blob), 'org-abc-uuid');
+  assert.strictEqual(appauth.isEncBlob(blob), true, 'v10/v11 prefix recognized');
+  assert.strictEqual(appauth.decryptAppBlobWin(ctx, 'not-encrypted'), null);
+});
