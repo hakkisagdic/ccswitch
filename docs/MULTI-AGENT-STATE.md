@@ -71,8 +71,13 @@ Unified shape: `{ tool, sessionId, created_at, updated_at, resumable, resumeComm
 Normalization is per-tool (SQLite/YAML/JSONL parsers). Ship order: Copilot → Gemini → Cursor →
 opencode → Aider. Reuse keyflip's `sessions`/`recall` once normalized into the unified shape.
 
+Per-tool **resume** commands are now mapped in code (`foreign.resumeCommand(tool,id)`):
+`cursor agent --resume <id>` · `copilot --resume=<id>` · `opencode --session <id>` ·
+`claude --resume <id>` (jsonl/Claude/Gemini) · Aider → none (no session-resume CLI). These are
+surfaced to the user as printable commands, never shell-executed by keyflip.
+
 ### Verification checklist (run on a machine with these tools)
-- opencode: instruction-file location + `storage/` message schema + `--session` resume.
+- opencode: instruction-file location + `storage/` message schema (the `--session` resume is mapped).
 - Copilot: `data.db` token extraction (or skip — carry only the memory md).
-- Aider: whether any `--resume`/session-list exists.
+- Aider: confirmed no `--resume`/session-list exists (resumeCommand returns null).
 - Cursor: `cursorDiskKV` bubble ordering for a faithful transcript.
