@@ -12,6 +12,39 @@
 //   - Aider `.aider.chat.history.md` → best-effort markdown (`#### ` user, `> ` tool, else assistant).
 // Copilot (YAML) is deferred (needs a YAML parser).
 
+const fs = require('fs');
+const path = require('path');
+
+// Best-effort locations of OTHER agents' session stores (relative to $HOME). Existence-gated,
+// so a machine without a given tool simply yields nothing. Paths are NEEDS-VERIFICATION —
+// confirm on a real install; adding/fixing one is a one-line change.
+const SESSION_SOURCES = [
+  { tool: 'cursor', files: ['Library/Application Support/Cursor/User/globalStorage/state.vscdb'], dirs: [{ base: 'Library/Application Support/Cursor/User/workspaceStorage', match: /state\.vscdb$/ }] },
+  { tool: 'opencode', dirs: [{ base: '.local/share/opencode', match: /\.jsonl?$/ }] },
+  { tool: 'gemini', dirs: [{ base: '.gemini/antigravity-cli', match: /transcript\.jsonl$/ }] },
+];
+function walkFind(dir, matchRe, budget, out) {
+  if (budget.left <= 0) return;
+  let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+  for (let i = 0; i < ents.length && budget.left > 0; i++) {
+    const p = path.join(dir, ents[i].name);
+    if (ents[i].isDirectory()) walkFind(p, matchRe, budget, out);
+    else if (ents[i].isFile() && matchRe.test(ents[i].name)) { out.push(p); budget.left--; }
+  }
+}
+// Discover foreign session files present on this machine → [{ tool, path, mtime }].
+function discover(ctx) {
+  const home = (ctx && ctx.home) || require('os').homedir();
+  const budget = { left: 3000 };
+  const out = [];
+  const add = function (tool, p) { try { const st = fs.statSync(p); out.push({ tool: tool, path: p, mtime: st.mtime.toISOString() }); } catch (e) { /* vanished */ } };
+  SESSION_SOURCES.forEach(function (src) {
+    (src.files || []).forEach(function (f) { const p = path.join(home, f); try { if (fs.statSync(p).isFile()) add(src.tool, p); } catch (e) { /* absent */ } });
+    (src.dirs || []).forEach(function (d) { const found = []; walkFind(path.join(home, d.base), d.match, budget, found); found.forEach(function (p) { add(src.tool, p); }); });
+  });
+  return out;
+}
+
 function countsOf(m) { return { messages: m.length, user: m.filter(function (x) { return x.role === 'user'; }).length, assistant: m.filter(function (x) { return x.role === 'assistant'; }).length }; }
 function dedupe(a) { const seen = {}; return (a || []).filter(function (x) { if (!x || seen[x]) return false; seen[x] = 1; return true; }); }
 function asBuffer(input) { return Buffer.isBuffer(input) ? input : Buffer.from(String(input == null ? '' : input), 'utf8'); }
@@ -134,4 +167,4 @@ function normalize(filePath, input) {
   throw new Error('unrecognized session format (supported: message-event JSONL, JSON, Cursor SQLite, Aider .md)');
 }
 
-module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, normalize: normalize };
+module.exports = { detect: detect, parseAider: parseAider, parseCursor: parseCursor, parseJson: parseJson, normalize: normalize, discover: discover, SESSION_SOURCES: SESSION_SOURCES };

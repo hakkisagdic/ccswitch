@@ -891,8 +891,10 @@ exporter (md / self-contained HTML / json). Supported now:
   is best-effort — Cursor's schema is NEEDS-VERIFICATION.
 - **generic JSON** (opencode + others) — the largest array of `{role, text/content}` objects.
 - **Aider** `.aider.chat.history.md` — best-effort markdown.
-14 tests. **Remaining:** Copilot (YAML — needs a parser); auto-discovery of foreign session
-locations (device-gated paths). See `docs/MULTI-AGENT-STATE.md`.
+`keyflip foreign --list` discovers foreign sessions at known (best-effort, existence-gated)
+locations — Cursor `state.vscdb`, opencode `.local/share/opencode`, Gemini `antigravity-cli/brain`
+(logic fixture-tested; paths NEEDS-VERIFICATION). 15 tests. **Remaining:** Copilot (YAML — needs a
+parser). See `docs/MULTI-AGENT-STATE.md`.
 
 ---
 

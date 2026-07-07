@@ -124,7 +124,7 @@ function usage() {
   print('  keyflip sessions archive <id|--older-than 30d> | unarchive <id> | archived');
   print('                                 move old transcripts into keyflip (gzipped) and back — declutter, reversible');
   print('  keyflip sessions export <id> [--format md|html|json] [--out <file>]   export a chat as a clean, shareable doc');
-  print('  keyflip foreign <session-file> [--format md|html|json]   normalize ANOTHER agent\'s session (JSONL / Cursor SQLite / JSON / Aider)');
+  print('  keyflip foreign --list | <session-file> [--format md|html|json]   find/normalize ANOTHER agent\'s session (Cursor/opencode/Gemini/Aider)');
   print('  keyflip sessions assign <id> <account>   continue a session AS another account (resume --run) — no profile switch');
   print('  keyflip sessions distill <id> [--to-claude]   summarize a chat into a durable keepsake (via `claude -p`)');
   print('  keyflip sessions compact <id> [--apply]   shrink a transcript (elide bulky tool output; dry-run by default)');
@@ -1709,6 +1709,16 @@ async function cmdSessionsRebind(ctx, rest) {
 function cmdForeign(ctx, rest) {
   const foreign = require('./foreign');
   const transcript = require('./transcript');
+  if (rest.indexOf('--list') !== -1) {
+    const found = foreign.discover(ctx);
+    if (JSON_MODE) { jsonOut({ foreign: found }); return; }
+    if (!found.length) { print(style.dim('No other agents\' sessions found in the known locations (Cursor / opencode / Gemini). These paths are best-effort — point at a file directly: ') + style.bold('keyflip foreign <file>')); return; }
+    print(style.bold('Other agents\' sessions on this machine') + ' ' + style.dim('(best-effort locations):'));
+    found.slice(0, 60).forEach(function (f) { print('  ' + style.ok('●') + ' ' + f.tool.padEnd(9) + ' ' + style.dim(f.mtime.slice(0, 16).replace('T', ' ')) + '  ' + f.path); });
+    print('');
+    print(style.dim('View one:  ') + style.bold('keyflip foreign <path> [--format md|html|json]'));
+    return;
+  }
   const file = positionals(rest, ['--format', '--out'])[0];
   if (!file) return fail('usage: keyflip foreign <session-file> [--format md|html|json] [--out <file|->]\n  reads another agent\'s session log (message-event JSONL, generic JSON, Cursor SQLite, or an Aider .md).');
   let raw; try { raw = fs.readFileSync(file); } catch (e) { return fail('cannot read ' + file + ': ' + (e && e.message)); } // Buffer (Cursor is binary)

@@ -118,3 +118,21 @@ test('parseJson: finds the largest array of message-like objects (opencode/gener
   assert.strictEqual(n.messages[0].text, 'hello');
   assert.strictEqual(n.messages[1].text, 'hi back');
 });
+
+test('discover: finds foreign sessions at the known locations, existence-gated', function () {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kf-disc-'));
+  // empty machine -> nothing
+  assert.deepStrictEqual(foreign.discover({ home: home }), []);
+  // seed the known locations
+  const cur = path.join(home, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage');
+  const oc = path.join(home, '.local', 'share', 'opencode', 'project', 'p', 'storage');
+  const gm = path.join(home, '.gemini', 'antigravity-cli', 'brain', 'U1');
+  [cur, oc, gm].forEach(function (d) { fs.mkdirSync(d, { recursive: true }); });
+  fs.writeFileSync(path.join(cur, 'state.vscdb'), 'SQLite format 3\0');
+  fs.writeFileSync(path.join(oc, 'ses_1.json'), '{}');
+  fs.writeFileSync(path.join(gm, 'transcript.jsonl'), '{}');
+  const found = foreign.discover({ home: home });
+  const tools = found.map(function (f) { return f.tool; }).sort();
+  assert.deepStrictEqual(tools, ['cursor', 'gemini', 'opencode']);
+  assert.ok(found.every(function (f) { return f.path && f.mtime; }));
+});
