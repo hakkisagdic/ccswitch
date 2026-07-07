@@ -256,11 +256,11 @@ const TOOLS = [
   },
   {
     name: 'keyflip_foreign_export', title: 'Normalize ANOTHER agent\'s session log',
-    description: 'Read another AI agent\'s session log FILE at `path` (a message-event JSONL, or an Aider .aider.chat.history.md) and normalize it into keyflip\'s unified conversation shape, then render it as markdown/HTML/json — the same view as Claude Code sessions. Read-only. (Cursor SQLite / Copilot YAML are not yet supported; parsers verified against synthetic fixtures — confirm against a real install.)',
+    description: 'Read another AI agent\'s session log FILE at `path` (message-event JSONL, generic JSON, a Cursor SQLite store, or an Aider .aider.chat.history.md) and normalize it into keyflip\'s unified conversation shape, then render it as markdown/HTML/json — the same view as Claude Code sessions. Read-only. (Copilot YAML is not yet supported; the Cursor/JSON/Aider mappings are best-effort — confirm against a real install.)',
     inputSchema: { type: 'object', properties: { path: { type: 'string' }, format: { type: 'string', enum: ['md', 'html', 'json'] } }, required: ['path'], additionalProperties: false }, annotations: RO,
     run: async function (ctx, args) {
       const foreign = require('./foreign'); const transcript = require('./transcript');
-      let raw; try { raw = fs.readFileSync(String(args.path), 'utf8'); } catch (e) { throw new Error('cannot read ' + args.path + ': ' + (e && e.message)); }
+      let raw; try { raw = fs.readFileSync(String(args.path)); } catch (e) { throw new Error('cannot read ' + args.path + ': ' + (e && e.message)); } // Buffer (Cursor is binary)
       const norm = foreign.normalize(String(args.path), raw); // throws on unrecognized format
       const fmt = args.format === 'html' ? 'html' : args.format === 'json' ? 'json' : 'md';
       const content = fmt === 'html' ? transcript.toHtml(norm, { id: norm.tool }) : fmt === 'json' ? JSON.stringify(norm, null, 2) : transcript.toMarkdown(norm, { id: norm.tool });

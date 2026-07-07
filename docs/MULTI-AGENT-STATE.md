@@ -48,11 +48,15 @@ under a benign key with no known prefix can slip — encrypt real transfers.
 Detects + normalizes a session-log FILE into keyflip's unified conversation shape (the same
 `transcript.parse` output), then renders it as markdown/HTML/json via the Claude Code exporter.
 Supported now (zero-dep, tolerant): **message-event JSONL** (Claude Code, and Gemini-style
-`transcript.jsonl`) via the tested `transcript.parse`; **Aider** `.aider.chat.history.md` via a
-best-effort markdown parser (`#### ` = user, `> ` = summarized tool lines, other = assistant) —
-**verify against a real Aider install**. Deferred (need a runtime dep to parse): **Cursor**
-(SQLite) and **Copilot** (YAML). Each parser is isolated behind `detect()`, so adding a source
-later is one function + a fixture test.
+`transcript.jsonl`) via the tested `transcript.parse`; **Cursor SQLite** (`cursorDiskKV`) via a
+**from-scratch zero-dep SQLite reader** `src/sqliteread.js` (header + table B-tree + record serial
+types + overflow-page chains — verified against real sqlite3 fixtures), with a best-effort
+bubble→message mapping (order from the composer header list, role from `type`); **generic JSON**
+(opencode + others — largest array of `{role, text/content}` objects); **Aider**
+`.aider.chat.history.md` via a best-effort markdown parser. The Cursor/JSON/Aider mappings are
+NEEDS-VERIFICATION against a real install — the SQLite *reader* itself is fixture-verified.
+Deferred: **Copilot** (YAML — needs a parser). Each parser is isolated behind `detect()`, so
+adding a source later is one function + a fixture test.
 
 Unified shape: `{ tool, sessionId, created_at, updated_at, resumable, resumeCommand, messages[], metadata }`.
 

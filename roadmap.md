@@ -882,10 +882,17 @@ returns the content), bilingual docs.
 ### Epic F v1 — foreign session import ◑ (2026-07-07)
 `keyflip foreign <file>` + MCP `keyflip_foreign_export` (`src/foreign.js`): detect + normalize
 ANOTHER agent's session-log FILE into keyflip's unified shape, then render with the Claude Code
-exporter. Ships **message-event JSONL** (Claude Code / Gemini-style, via the tested
-`transcript.parse`) and **Aider** `.aider.chat.history.md` (best-effort markdown parser). 6 tests.
-**Remaining:** Cursor (SQLite) + Copilot (YAML) need a runtime dep; auto-discovery of foreign
-session locations is device-gated (paths NEEDS-VERIFICATION). See `docs/MULTI-AGENT-STATE.md`.
+exporter (md / self-contained HTML / json). Supported now:
+- **message-event JSONL** (Claude Code / Gemini-style) — via the tested `transcript.parse`.
+- **Cursor SQLite** (`cursorDiskKV`) — via a **from-scratch zero-dep SQLite reader**
+  (`src/sqliteread.js`: header + table B-tree + record serial types + OVERFLOW-page chains),
+  verified against real sqlite3-CLI fixtures (9 KB overflow value, 500 rows across pages,
+  int/null/blob). Bubble→message mapping (order from the composer header list, role from `type`)
+  is best-effort — Cursor's schema is NEEDS-VERIFICATION.
+- **generic JSON** (opencode + others) — the largest array of `{role, text/content}` objects.
+- **Aider** `.aider.chat.history.md` — best-effort markdown.
+14 tests. **Remaining:** Copilot (YAML — needs a parser); auto-discovery of foreign session
+locations (device-gated paths). See `docs/MULTI-AGENT-STATE.md`.
 
 ---
 

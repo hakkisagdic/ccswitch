@@ -73,7 +73,8 @@ on a switch. Sessions are captured automatically during `onboard`/`login`.
 returns content snippets + an `orphan` flag), `keyflip_sessions_rebind` (folder-rename fix),
 `keyflip_sessions_archive`/`_unarchive`/`_archived`, `keyflip_sessions_export` (a chat → clean
 markdown/HTML/json for sharing), `keyflip_foreign_export` (normalize ANOTHER agent's session
-log — JSONL / Aider .md — into the same view); cross-machine: `keyflip_migrate_export`/
+log — JSONL / Cursor SQLite / generic JSON / Aider — into the same view via a from-scratch
+zero-dep SQLite reader); cross-machine: `keyflip_migrate_export`/
 `_import`/`_push`/`_pull` (export takes `agents:true` to also carry other agents' memory) and
 `keyflip_agents` (inspect); git versioning: `keyflip_history`/`_undo`/`_restore`. The mutating
 ones require `confirm: true`; `keyflip_login` opens a browser for the human. Only the

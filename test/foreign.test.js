@@ -77,3 +77,44 @@ test('the normalized shape feeds straight into the transcript exporter', functio
   const html = transcript.toHtml(n, { id: n.tool });
   assert.ok(/^<!doctype html>/i.test(html) && html.indexOf('class="msg u"') !== -1);
 });
+
+// --- Cursor SQLite + generic JSON (epic F extensions) ---
+const cp = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+let HAS_SQLITE = false;
+try { cp.execFileSync('sqlite3', ['--version'], { stdio: 'ignore' }); HAS_SQLITE = true; } catch (e) { HAS_SQLITE = false; }
+function mkdb(sql) { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kf-fdb-')), 'x.db'); cp.execFileSync('sqlite3', [f], { input: sql }); return fs.readFileSync(f); }
+function j(o) { return JSON.stringify(o).replace(/'/g, "''"); }
+
+test('detect: a SQLite file is recognized as cursor from its magic header', function (t) {
+  if (!HAS_SQLITE) return t.skip('sqlite3 CLI not installed');
+  const buf = mkdb('CREATE TABLE cursorDiskKV(key TEXT, value TEXT);\n');
+  assert.strictEqual(foreign.detect('state.vscdb', buf), 'cursor');
+});
+
+test('parseCursor: bubbles ordered by the composer header list; roles from type', function (t) {
+  if (!HAS_SQLITE) return t.skip('sqlite3 CLI not installed');
+  const sql = 'CREATE TABLE cursorDiskKV(key TEXT, value TEXT);\n' +
+    "INSERT INTO cursorDiskKV VALUES('composerData:C1','" + j({ fullConversationHeadersOnly: [{ bubbleId: 'b1' }, { bubbleId: 'b2' }, { bubbleId: 'b3' }] }) + "');\n" +
+    "INSERT INTO cursorDiskKV VALUES('bubbleId:C1:b2','" + j({ type: 2, text: 'the fix' }) + "');\n" +
+    "INSERT INTO cursorDiskKV VALUES('bubbleId:C1:b1','" + j({ type: 1, text: 'my bug' }) + "');\n" +
+    "INSERT INTO cursorDiskKV VALUES('bubbleId:C1:b3','" + j({ type: 1, text: 'thanks' }) + "');\n";
+  const n = foreign.normalize('state.vscdb', mkdb(sql));
+  assert.strictEqual(n.tool, 'cursor');
+  assert.deepStrictEqual(n.messages.map(function (m) { return m.role + ':' + m.text; }), ['user:my bug', 'assistant:the fix', 'user:thanks'], 'order + roles honored');
+});
+
+test('parseJson: finds the largest array of message-like objects (opencode/generic)', function () {
+  const doc = JSON.stringify({ session: 'ses_x', meta: { model: 'x' }, parts: [
+    { role: 'user', text: 'hello' },
+    { role: 'assistant', content: [{ type: 'text', text: 'hi back' }] },
+    { role: 'user', text: '' },
+  ] });
+  const n = foreign.normalize('storage.json', doc);
+  assert.strictEqual(n.tool, 'json');
+  assert.strictEqual(n.counts.messages, 2, 'empty-text message dropped');
+  assert.strictEqual(n.messages[0].text, 'hello');
+  assert.strictEqual(n.messages[1].text, 'hi back');
+});

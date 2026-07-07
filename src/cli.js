@@ -124,7 +124,7 @@ function usage() {
   print('  keyflip sessions archive <id|--older-than 30d> | unarchive <id> | archived');
   print('                                 move old transcripts into keyflip (gzipped) and back — declutter, reversible');
   print('  keyflip sessions export <id> [--format md|html|json] [--out <file>]   export a chat as a clean, shareable doc');
-  print('  keyflip foreign <session-file> [--format md|html|json]   normalize ANOTHER agent\'s session log (JSONL / Aider .md)');
+  print('  keyflip foreign <session-file> [--format md|html|json]   normalize ANOTHER agent\'s session (JSONL / Cursor SQLite / JSON / Aider)');
   print('  keyflip sessions assign <id> <account>   continue a session AS another account (resume --run) — no profile switch');
   print('  keyflip sessions distill <id> [--to-claude]   summarize a chat into a durable keepsake (via `claude -p`)');
   print('  keyflip sessions compact <id> [--apply]   shrink a transcript (elide bulky tool output; dry-run by default)');
@@ -1710,8 +1710,8 @@ function cmdForeign(ctx, rest) {
   const foreign = require('./foreign');
   const transcript = require('./transcript');
   const file = positionals(rest, ['--format', '--out'])[0];
-  if (!file) return fail('usage: keyflip foreign <session-file> [--format md|html|json] [--out <file|->]\n  reads another agent\'s session log (message-event JSONL, or an Aider .aider.chat.history.md).');
-  let raw; try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { return fail('cannot read ' + file + ': ' + (e && e.message)); }
+  if (!file) return fail('usage: keyflip foreign <session-file> [--format md|html|json] [--out <file|->]\n  reads another agent\'s session log (message-event JSONL, generic JSON, Cursor SQLite, or an Aider .md).');
+  let raw; try { raw = fs.readFileSync(file); } catch (e) { return fail('cannot read ' + file + ': ' + (e && e.message)); } // Buffer (Cursor is binary)
   let norm; try { norm = foreign.normalize(file, raw); } catch (e) { return fail(e.message); }
   const fmt = (flagVal(rest, '--format') || 'md').toLowerCase();
   let out, ext;
