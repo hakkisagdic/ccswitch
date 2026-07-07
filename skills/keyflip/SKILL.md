@@ -217,6 +217,17 @@ account; `keyflip provider off` restores it. Never put an API key in argv — us
   `keyflip transfer push <host:port> --code XXXX` on the SOURCE sends (with the E2 filters) to
   it — for "send my sessions to my other, listening machine". LAN transfer is TTY/foreground so
   it stays CLI-only; the MCP path for cross-machine is `keyflip_migrate_push`/`_pull` (WebDAV).
+- **FLEET — one screen for every machine.** `keyflip fleet init --dir <shared-folder>` links this
+  machine into a control plane through an **encrypted shared folder** (Dropbox/iCloud/synced dir;
+  same fleet passphrase everywhere). `keyflip fleet push [--with-secrets]` publishes this machine's
+  status (accounts + cached quota + recent chats with **reply status**: assistant=replied,
+  user=waiting) AND applies commands queued for it (consent-gated). `keyflip fleet status` (or the
+  web `fleet panel`) shows EVERY machine on one screen + flags chats that got a **new reply** since
+  last check. `keyflip fleet switch <machine> <account>` queues a remote switch; `keyflip fleet
+  send-account <acct> --to <machine> [--from <machine>]` distributes an account — so from machine A
+  you can hand machine C's account to machine B; `keyflip fleet collect` gathers every published
+  account locally. Everything in the rendezvous is encrypted (nothing plaintext at rest). (MCP:
+  `keyflip_fleet_status` (read), `keyflip_fleet_switch` / `keyflip_fleet_send_account` (need `confirm:true`).)
 - `keyflip consolidate [--watch]` — sync every account's chat index so each shows
   ALL conversations. The desktop app's store is locked while it runs, so a one-shot
   offers to close→sync→reopen the app; `--watch` re-syncs on an interval whenever the

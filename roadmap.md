@@ -871,6 +871,26 @@ normalization) — all device-gated. See `docs/MULTI-AGENT-STATE.md`.
 > NOTE: this sits AFTER epic I (RAG) in priority, per the user — continue the existing list
 > (I1 next), then come back to J.
 
+### K — FLEET: multi-machine control plane ✅ (2026-07-07)
+"Manage every associated keyflip from one screen." keyflip isn't a daemon, so the fleet
+coordinates through a **shared rendezvous folder** (Dropbox/iCloud/WebDAV/synced dir) where every
+file is encrypted with the fleet passphrase (`sync.encrypt`). `src/fleet.js`:
+- Stable per-machine identity (`fleet.json`, added to profiles RESERVED_FILES so it's never
+  mistaken for an account); `keyflip fleet init --dir <folder>`.
+- `fleet push [--with-secrets]` publishes this machine's STATUS (accounts + cached quota + recent
+  chats with last-message **reply status**) and drains its INBOX, applying queued commands
+  (consent-gated: switch / save-account).
+- `fleet status` + web `fleet panel` (loopback, auto-refresh, mobile-responsive, browser-verified):
+  every machine on one screen + a **"new reply since last check"** diff (`fleet-seen.json`).
+- `fleet switch <machine> <account>` (remote switch), `fleet send-account <acct> --to <machine>
+  [--from <machine>]` (distribute — A hands C's account to B via C's `--with-secrets` publish),
+  `fleet collect` (gather all published accounts locally).
+- Reuses `transfer.buildExport`/`applyImport` for account payloads + `sync.encrypt` for the bus.
+- 8 tests (full A/B/C topology as separate ctxs sharing one dir). MCP: `keyflip_fleet_status`
+  (read), `keyflip_fleet_switch` / `keyflip_fleet_send_account` (confirm-gated). Bilingual docs.
+**Remaining (device-gated):** a background poll/notify daemon (no-daemon tension — today it's
+pull-on-`push`); WebDAV rendezvous (dir works today; `sync.dav*` can back it).
+
 ### Session export ✅ (2026-07-07)
 `keyflip sessions export <id> [--format md|html|json] [--out <file|->]` renders a Claude Code
 transcript into a clean, shareable document: **markdown**, a **self-contained HTML chat view**

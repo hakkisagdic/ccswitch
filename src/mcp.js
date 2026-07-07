@@ -507,6 +507,49 @@ const TOOLS = [
     },
   },
   {
+    name: 'keyflip_fleet_status', title: 'See every associated machine (the fleet)',
+    description: 'Read the FLEET: every associated keyflip machine that has checked in to the shared encrypted rendezvous — its accounts (+cached quota), active account, and recent chats with reply status (assistant = replied, user = waiting). Also flags chats that got a NEW reply since the last check. Read-only. Requires the fleet passphrase_file.',
+    inputSchema: { type: 'object', properties: { passphrase_file: { type: 'string' } }, required: ['passphrase_file'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) {
+      const fleet = require('./fleet');
+      const b = fleet.bus(ctx, { passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() });
+      const statuses = fleet.readFleet(ctx, b); const nr = fleet.newReplies(ctx, statuses); fleet.saveSeen(ctx, nr.snapshot);
+      return { machines: statuses, newReplies: nr.newReplies };
+    },
+  },
+  {
+    name: 'keyflip_fleet_switch', title: 'Queue an account switch on a remote machine',
+    description: 'Queue a command telling ANOTHER fleet machine to switch to a given saved account — it applies on that machine\'s next `keyflip fleet push` (with the user\'s consent there). Mutating (writes to the shared rendezvous) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { machine: { type: 'string', description: 'Target machine name or id.' }, account: { type: 'string' }, passphrase_file: { type: 'string' }, confirm: confirmProp.confirm }, required: ['machine', 'account', 'passphrase_file', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      const fleet = require('./fleet');
+      const b = fleet.bus(ctx, { passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() });
+      const m = fleet.readFleet(ctx, b).filter(function (s) { return s.name === args.machine || s.machineId === args.machine || s.machineId.indexOf(String(args.machine)) === 0; });
+      if (m.length !== 1) throw new Error("no single fleet machine named '" + args.machine + "'");
+      const cmd = fleet.queue(ctx, b, m[0].machineId, { type: 'switch', payload: { account: String(args.account) } });
+      return { queued: { target: m[0].name, account: args.account, id: cmd.id } };
+    },
+  },
+  {
+    name: 'keyflip_fleet_send_account', title: 'Distribute an account to a remote machine',
+    description: 'Queue a command handing a saved account (yours, or with from=<machine> one that machine published with credentials) to ANOTHER fleet machine — it saves it on its next `keyflip fleet push`. This is how machine A gives machine B an account that lives on machine C. Mutating (writes login secrets to the encrypted rendezvous) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { account: { type: 'string' }, to: { type: 'string' }, from: { type: 'string', description: 'Relay: pull the account from this machine\'s published creds instead of your own.' }, passphrase_file: { type: 'string' }, confirm: confirmProp.confirm }, required: ['account', 'to', 'passphrase_file', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      const fleet = require('./fleet'); const transfer = require('./transfer');
+      const b = fleet.bus(ctx, { passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() });
+      const statuses = fleet.readFleet(ctx, b);
+      const to = statuses.filter(function (s) { return s.name === args.to || s.machineId === args.to; })[0];
+      if (!to) throw new Error("no fleet machine named '" + args.to + "'");
+      let acct;
+      if (args.from) { const from = statuses.filter(function (s) { return s.name === args.from || s.machineId === args.from; })[0]; acct = from && fleet.accountFrom(from, String(args.account)); if (!acct) throw new Error("'" + args.from + "' has not published account '" + args.account + "' with credentials"); }
+      else { acct = transfer.buildExport(ctx).envelope.accounts.filter(function (a) { return a.name === String(args.account); })[0]; if (!acct) throw new Error("no local account '" + args.account + "'"); }
+      const cmd = fleet.queue(ctx, b, to.machineId, { type: 'save-account', payload: { account: acct } });
+      return { queued: { target: to.name, account: args.account, id: cmd.id } };
+    },
+  },
+  {
     name: 'keyflip_agents', title: 'List other agents\' memory + config keyflip can carry',
     description: 'Report which OTHER AI agents have files on THIS machine that keyflip can carry across machines: MEMORY (Cursor `~/.cursor/rules/`, Gemini `~/.gemini/GEMINI.md`, Codex `~/.codex/AGENTS.md`+`memories/` — markdown, no secrets) and CONFIG (`~/.cursor/mcp.json`, `~/.gemini/settings.json`, `~/.codex/config.toml` — carried ONLY secret-scanned + redacted). Read-only; feed into keyflip_migrate_export with agents=true and/or agent_config=true.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,

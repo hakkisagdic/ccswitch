@@ -151,6 +151,12 @@ keyflip transfer serve [--qr] # LAN: show a one-time code (+ scannable QR) + str
 keyflip transfer pull --code X # LAN: auto-discover the peer, pull + MERGE (or pass <host:port>)
 keyflip transfer serve --receive   # LAN: WAIT to receive a pushed bundle (reverse direction)
 keyflip transfer push <host> --code X   # LAN: SEND your bundle to a listening machine (with E2 filters)
+keyflip fleet init --dir <shared-folder>   # FLEET: link this machine into a control plane (encrypted shared/synced folder)
+keyflip fleet push [--with-secrets]   # publish this machine's status (accounts+quota+chat state) + apply queued commands
+keyflip fleet status | panel   # see EVERY machine on one screen — accounts, quota, "reply arrived?" (panel = web dashboard)
+keyflip fleet switch <machine> <account>   # switch a REMOTE machine's account (applied on its next push)
+keyflip fleet send-account <acct> --to <machine> [--from <machine>]   # distribute an account (e.g. C's account to B, from A)
+keyflip fleet collect         # gather every account published across the fleet onto this machine
 keyflip consolidate [--watch] # sync every account's chat index so each shows ALL conversations
 keyflip remove <name|number>  # delete a saved account
 keyflip history | undo | restore <ref>   # git-versioned config: inspect / undo / roll back any change (secrets never committed)

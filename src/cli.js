@@ -115,6 +115,8 @@ function usage() {
   print('                                 session transcripts to a new machine and MERGE (also: push/pull --url)');
   print('                                 add --agents (memory) / --agent-config (MCP+settings, redacted) for other AI agents');
   print('  keyflip agents                 list other agents\' memory + config keyflip can carry (Cursor/Gemini/Codex)');
+  print('  keyflip fleet init --dir <shared-folder> | push | status | switch <machine> <acct> | send-account <acct> --to <machine> [--from <machine>] | collect');
+  print('                                 manage ALL your machines from one screen (encrypted shared folder): remote switch, collect/distribute accounts, chat status');
   print('  keyflip transfer serve [--receive] | pull [<host>] --code X | push <host> --code X   LIVE device-to-device over the LAN');
   print('                                 add --qr to `serve` to show a scannable QR of the pairing code');
   print('  keyflip consolidate [--watch]  sync every account\'s chat index so each shows ALL conversations');
@@ -1706,6 +1708,151 @@ async function cmdSessionsRebind(ctx, rest) {
   jsonOut({ rebind: { moved: r.moved, skipped: r.skipped, oldDir: r.oldDir, newDir: r.newDir } });
 }
 
+// FLEET: manage every associated keyflip from one screen — see them all, switch a remote
+// machine's account, and collect/distribute accounts across the fleet, all through an
+// encrypted shared rendezvous folder.
+function fleetBus(ctx, rest) {
+  const passphrase = readSecretArg(rest, '--passphrase-file');
+  if (!passphrase) { fail('a fleet passphrase is required: --passphrase-file <file>'); return null; }
+  try { return require('./fleet').bus(ctx, { passphrase: passphrase }); } catch (e) { fail(e.message); return null; }
+}
+function resolveMachine(statuses, arg) {
+  const n = statuses.filter(function (s) { return s.name === arg; });
+  if (n.length === 1) return n[0];
+  const id = statuses.filter(function (s) { return s.machineId === arg || s.machineId.indexOf(arg) === 0; });
+  return id.length === 1 ? id[0] : (n.length > 1 ? 'ambiguous' : null);
+}
+async function cmdFleet(ctx, rest) {
+  const fleet = require('./fleet');
+  const sub = rest[0];
+
+  if (sub === 'init') {
+    const ni = rest.indexOf('--name'); const di = rest.indexOf('--dir');
+    const patch = {};
+    if (di !== -1 && rest[di + 1]) patch.dir = require('path').resolve(rest[di + 1]);
+    if (ni !== -1 && rest[ni + 1]) patch.name = rest[ni + 1];
+    if (!patch.dir && !require('./fleet').identity(ctx).dir) return fail('usage: keyflip fleet init --dir <shared-folder> [--name <this-machine>]\n  the folder must be reachable by every machine (a Dropbox/iCloud/synced dir).');
+    const id = fleet.setConfig(ctx, patch);
+    if (JSON_MODE) { jsonOut({ fleet: { machineId: id.machineId, name: id.name, dir: id.dir } }); return; }
+    print(style.ok('✅') + ' this machine is ' + style.bold(id.name) + ' ' + style.dim('(' + id.machineId + ')') + ' in the fleet at ' + style.bold(id.dir));
+    print('   ' + style.dim('Publish + check in with:  ') + style.bold('keyflip fleet push --passphrase-file <f>') + style.dim('   (same passphrase on every machine).'));
+    return;
+  }
+
+  const b = fleetBus(ctx, rest); if (!b) return;
+
+  if (sub === 'push') {
+    const withSecrets = rest.indexOf('--with-secrets') !== -1;
+    const autoYes = rest.indexOf('-y') !== -1 || rest.indexOf('--yes') !== -1;
+    const status = fleet.publish(ctx, b, { withSecrets: withSecrets });
+    // process my inbox: apply queued commands (mutations gated on consent)
+    const inbox = fleet.readInbox(ctx, b);
+    const results = [];
+    for (let i = 0; i < inbox.length; i++) {
+      const cmd = inbox[i];
+      let allow = { allowSwitch: false, allowSave: false, force: rest.indexOf('--force') !== -1 };
+      if (cmd.type === 'note') { /* no consent */ }
+      else if (autoYes) { allow.allowSwitch = true; allow.allowSave = true; }
+      else if (!JSON_MODE && process.stdin.isTTY) {
+        const desc = cmd.type === 'switch' ? 'switch this machine to account "' + (cmd.payload && cmd.payload.account) + '"'
+          : cmd.type === 'save-account' ? 'save account "' + (cmd.payload && cmd.payload.account && cmd.payload.account.name) + '" (from ' + cmd.from + ')' : cmd.type;
+        const ok = await confirm(style.warn('⚠') + ' ' + cmd.from + ' asks to ' + desc + ' — allow? [y/N] ');
+        allow.allowSwitch = allow.allowSave = ok;
+      }
+      results.push(fleet.applyCommand(ctx, cmd, allow));
+    }
+    if (inbox.length) fleet.clearInbox(ctx, b);
+    if (JSON_MODE) { jsonOut({ fleetPush: { machine: b.name, accounts: status.accounts.length, chats: status.chats.length, applied: results } }); return; }
+    print(style.ok('📡') + ' published ' + style.bold(b.name) + ': ' + status.accounts.length + ' account(s), ' + status.chats.length + ' chat(s)' + (withSecrets ? style.dim(' (with encrypted creds)') : '') + '.');
+    results.forEach(function (r) { print('   ' + (r.ok ? style.ok('✓') : style.dim('•')) + ' inbox: ' + r.applied + ' — ' + r.detail); });
+    return;
+  }
+
+  if (sub === 'status') {
+    const statuses = fleet.readFleet(ctx, b);
+    const nr = fleet.newReplies(ctx, statuses); fleet.saveSeen(ctx, nr.snapshot);
+    if (JSON_MODE) { jsonOut({ fleet: statuses, newReplies: nr.newReplies }); return; }
+    if (!statuses.length) { print(style.dim('No machines have checked in yet. Run `keyflip fleet push --passphrase-file <f>` on each.')); return; }
+    print(style.bold('Fleet') + ' ' + style.dim('(' + statuses.length + ' machine(s)):'));
+    statuses.forEach(function (s) {
+      const active = s.accounts.filter(function (a) { return a.active; })[0];
+      const q = active && active.fiveHourPct != null ? ' · ' + Math.round(active.fiveHourPct) + '% 5h' : '';
+      const waiting = (s.chats || []).filter(function (c) { return c.lastRole === 'user'; }).length;
+      print('  ' + style.ok('●') + ' ' + style.bold(s.name.padEnd(14)) + ' ' + (s.activeEmail || 'not logged in') + q + '  ' + style.dim(s.accounts.length + ' acct · ' + (s.chats || []).length + ' chat' + (waiting ? ' · ' + waiting + ' waiting' : '') + ' · ' + String(s.at).slice(0, 16).replace('T', ' ')));
+    });
+    if (nr.newReplies.length) {
+      print('');
+      print(style.ok('✨ New replies since last check:'));
+      nr.newReplies.forEach(function (r) { print('   ' + style.bold(r.machine) + ' ' + style.dim(r.sessionId.slice(0, 8)) + '  “' + (r.lastText || '') + '”'); });
+    }
+    return;
+  }
+
+  if (sub === 'switch') {
+    const pos = positionals(rest.slice(1), ['--passphrase-file']);
+    const machineArg = pos[0], account = pos[1];
+    if (!machineArg || !account) return fail('usage: keyflip fleet switch <machine> <account> --passphrase-file <f>');
+    const m = resolveMachine(fleet.readFleet(ctx, b), machineArg);
+    if (m === 'ambiguous') return fail("'" + machineArg + "' matches more than one machine");
+    if (!m) return fail("no fleet machine named '" + machineArg + "' (run `keyflip fleet status`)");
+    const cmd = fleet.queue(ctx, b, m.machineId, { type: 'switch', payload: { account: account } });
+    if (JSON_MODE) { jsonOut({ queued: { target: m.name, command: cmd } }); return; }
+    print(style.ok('📨') + ' queued a switch → ' + style.bold(m.name) + ' will move to ' + style.bold(account) + ' on its next ' + style.bold('keyflip fleet push') + '.');
+    return;
+  }
+
+  if (sub === 'send-account') {
+    const pos = positionals(rest.slice(1), ['--passphrase-file', '--to', '--from']);
+    const account = pos[0];
+    const toArg = flagVal(rest, '--to'); const fromArg = flagVal(rest, '--from');
+    if (!account || !toArg) return fail('usage: keyflip fleet send-account <account> --to <machine> [--from <machine>] --passphrase-file <f>');
+    const statuses = fleet.readFleet(ctx, b);
+    const to = resolveMachine(statuses, toArg);
+    if (!to || to === 'ambiguous') return fail("no single fleet machine named '" + toArg + "'");
+    let acctObj = null;
+    if (fromArg) {
+      const from = resolveMachine(statuses, fromArg);
+      if (!from || from === 'ambiguous') return fail("no single fleet machine named '" + fromArg + "'");
+      acctObj = fleet.accountFrom(from, account);
+      if (!acctObj) return fail("'" + fromArg + "' has not published account '" + account + "' with credentials (it must `keyflip fleet push --with-secrets`).");
+    } else {
+      const ex = require('./transfer').buildExport(ctx).envelope.accounts.filter(function (a) { return a.name === account; })[0];
+      if (!ex) return fail("no local account '" + account + "' (or its credentials are unreadable).");
+      acctObj = ex;
+    }
+    const cmd = fleet.queue(ctx, b, to.machineId, { type: 'save-account', payload: { account: acctObj } });
+    if (JSON_MODE) { jsonOut({ queued: { target: to.name, account: account, command: { id: cmd.id, type: cmd.type } } }); return; }
+    print(style.ok('📨') + ' queued ' + style.bold(account) + (fromArg ? ' (from ' + fromArg + ')' : '') + ' → ' + style.bold(to.name) + ' will save it on its next ' + style.bold('keyflip fleet push') + '.');
+    return;
+  }
+
+  if (sub === 'collect') {
+    const statuses = fleet.readFleet(ctx, b);
+    const transfer = require('./transfer');
+    const seen = {}; const toImport = [];
+    statuses.forEach(function (s) { Object.keys((s.creds) || {}).forEach(function (name) { if (seen[name]) return; seen[name] = 1; const a = fleet.accountFrom(s, name); if (a) toImport.push(a); }); });
+    if (!toImport.length) return fail('no accounts published with credentials across the fleet (machines must `keyflip fleet push --with-secrets`).');
+    let res; try { res = await withLock(ctx, function () { return transfer.applyImport(ctx, { format: transfer.FORMAT, version: transfer.VERSION, accounts: toImport }, { force: rest.indexOf('--force') !== -1 }); }); } catch (e) { return fail(e.message); }
+    if (JSON_MODE) { jsonOut({ collected: res }); return; }
+    print(style.ok('✅') + ' collected ' + res.imported.length + ' account(s) from the fleet: ' + (res.imported.join(', ') || '(none new)') + (res.skipped.length ? style.dim('  (kept: ' + res.skipped.join(', ') + ')') : ''));
+    return;
+  }
+
+  if (sub === 'panel') {
+    const panel = require('./panel');
+    const pi = rest.indexOf('--port'); const port = pi !== -1 ? (parseInt(rest[pi + 1], 10) || 8898) : 8898;
+    const getFleet = function () { const statuses = fleet.readFleet(ctx, b); const nr = fleet.newReplies(ctx, statuses); return { machines: statuses, newReplies: nr.newReplies }; };
+    let h; try { h = await panel.serveFleet(ctx, { port: port, getFleet: getFleet }); }
+    catch (e) { return fail('could not start the fleet panel: ' + (e && e.code === 'EADDRINUSE' ? 'port ' + port + ' in use (try --port N)' : (e && e.message))); }
+    print(style.ok('✅') + ' fleet dashboard on ' + style.bold(h.url) + '  ' + style.dim('(read-only, loopback; Ctrl-C to stop)'));
+    if (rest.indexOf('--open') !== -1) { const opener = ctx.platform === 'darwin' ? 'open' : ctx.platform === 'win32' ? 'cmd' : 'xdg-open'; try { exec.run(opener, ctx.platform === 'win32' ? ['/c', 'start', h.url] : [h.url]); } catch (e) { /* ignore */ } }
+    await new Promise(function () { /* serve until Ctrl-C */ });
+    return;
+  }
+
+  return fail('usage: keyflip fleet <init|push|status|switch|send-account|collect|panel> …  (see `keyflip fleet` help)');
+}
+
 // Epic F: normalize ANOTHER agent's session file (JSONL, or an Aider .md) into keyflip's
 // unified shape and render it with the same exporter. Point it at a file the user provides.
 function cmdForeign(ctx, rest) {
@@ -3117,7 +3264,7 @@ async function main(argv) {
   // Skip the passive update fetch for machine/interactive/long-lived commands: it
   // would corrupt the MCP stdio stream, delay `run`/`mcp` exit on a slow network,
   // or print a stray line during a destructive/JSON op.
-  const NO_NOTICE = ['menu', 'menubar', 'upgrade', 'reset', 'uninstall', 'setup', 'onboard', 'login', 'mcp', 'run', 'autoswitch', 'install-skill', 'statusline', 'send', 'panel', 'agents', 'foreign'];
+  const NO_NOTICE = ['menu', 'menubar', 'upgrade', 'reset', 'uninstall', 'setup', 'onboard', 'login', 'mcp', 'run', 'autoswitch', 'install-skill', 'statusline', 'send', 'panel', 'agents', 'foreign', 'fleet'];
   const skipNotice = JSON_MODE || cmd === undefined || NO_NOTICE.indexOf(cmd) !== -1;
   if (!skipNotice) { try { await update.maybeNotify(ctx, VERSION); } catch (e) { /* ignore */ } }
 }
@@ -3215,6 +3362,10 @@ async function dispatch(ctx, cmd, rest) {
         return cmdMenubar(ctx, rest);
       case 'foreign':
         return cmdForeign(ctx, rest);
+      case 'fleet':
+        return (rest[0] === 'push' || rest[0] === 'collect')
+          ? withLock(ctx, function () { return cmdFleet(ctx, rest); })
+          : cmdFleet(ctx, rest);
       case 'sessions':
         return cmdSessions(ctx, rest);
       case 'resume':

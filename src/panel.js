@@ -186,6 +186,45 @@ function calendarSvg(a) {
   return '<svg class="cal" viewBox="0 0 ' + (cols * S) + ' ' + (7 * S) + '" preserveAspectRatio="xMinYMin meet">' + cells + '</svg>';
 }
 
+// FLEET dashboard — one screen for every associated machine. Self-contained; fetches
+// /api/fleet (which the fleet server decrypts from the rendezvous) and auto-refreshes.
+function renderFleetPage() {
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><title>keyflip fleet</title>' +
+    '<style>' + STYLE + FLEET_STYLE + '</style></head><body>' +
+    '<header><h1>⚡ keyflip <span class="muted">fleet</span></h1><span id="count" class="muted"></span><button id="refresh">↻</button></header>' +
+    '<main>' +
+    '<div id="replies"></div>' +
+    '<div id="machines" class="grid"></div>' +
+    '</main><footer class="muted">Read-only · loopback only · auto-refreshes · <code>Ctrl-C</code> in the terminal to stop.</footer>' +
+    '<script>' + FLEET_SCRIPT + '</script></body></html>';
+}
+const FLEET_STYLE = [
+  '.machine{background:var(--card);border:1px solid var(--bar);border-radius:12px;padding:14px}',
+  '.machine h3{margin:0 0 2px;font-size:15px}.machine .sub{color:var(--muted);font-size:12px;margin-bottom:10px}',
+  '.acct{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-top:1px solid var(--bar)}.acct.active{color:var(--accent);font-weight:600}',
+  '.chat{font-size:12px;color:var(--muted);padding:2px 0}.chat .r{color:var(--ok)}.chat .w{color:var(--warn)}',
+  '.banner{background:var(--card);border:1px solid var(--ok);border-radius:10px;padding:10px 12px;margin-bottom:14px}.banner b{color:var(--ok)}',
+].join('');
+const FLEET_SCRIPT = [
+  'function esc(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c]})}',
+  'function pct(p){return p==null?"":Math.round(p)+"%"}',
+  'async function load(){',
+  ' var d; try{ d=await (await fetch("/api/fleet")).json(); }catch(e){ document.getElementById("count").textContent="(fleet unreachable)"; return; }',
+  ' var ms=d.machines||[];',
+  ' document.getElementById("count").textContent=ms.length+" machine"+(ms.length===1?"":"s");',
+  ' var nr=d.newReplies||[];',
+  ' document.getElementById("replies").innerHTML=nr.length? "<div class=banner><b>✨ New replies</b> "+nr.map(function(r){return esc(r.machine)+" · "+esc((r.lastText||"").slice(0,60));}).join(" — ")+"</div>":"";',
+  ' document.getElementById("machines").innerHTML=ms.map(function(m){',
+  '  var active=(m.accounts||[]).filter(function(a){return a.active;})[0];',
+  '  var accts=(m.accounts||[]).map(function(a){return "<div class=\\"acct"+(a.active?" active":"")+"\\"><span>"+esc(a.email||a.name)+(a.active?" ✓":"")+"</span><span class=muted>"+(a.fiveHourPct!=null?"5h "+pct(a.fiveHourPct):"")+"</span></div>";}).join("");',
+  '  var chats=(m.chats||[]).slice(0,6).map(function(c){var st=c.replied?"<span class=r>✓ replied</span>":(c.lastRole==="user"?"<span class=w>⏳ waiting</span>":"");return "<div class=chat>"+esc((c.sessionId||"").slice(0,8))+" "+st+" <span class=muted>"+esc((c.lastText||"").slice(0,40))+"</span></div>";}).join("");',
+  '  return "<div class=machine><h3>"+esc(m.name)+"</h3><div class=sub>"+esc(m.activeEmail||"not logged in")+" · "+esc((m.at||"").slice(0,16).replace("T"," "))+"</div>"+accts+(chats?"<div style=margin-top:8px>"+chats+"</div>":"")+"</div>";',
+  ' }).join("")||"<span class=muted>No machines have checked in yet.</span>";',
+  '}',
+  'document.getElementById("refresh").onclick=load;load();setInterval(load,15000);',
+].join('\n');
+
 // The single-page dashboard. Self-contained (inline CSS/JS); fetches /api/state and renders.
 function renderPage() {
   return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
@@ -285,4 +324,35 @@ function serve(ctx, opts) {
   });
 }
 
-module.exports = { buildState: buildState, buildActivity: buildActivity, buildMemoryGraph: buildMemoryGraph, buildSnapshot: buildSnapshot, renderSnapshot: renderSnapshot, renderPage: renderPage, serve: serve };
+// Fleet dashboard server (loopback, read-only). opts.getFleet() returns { machines, newReplies }
+// — the caller (cmdFleet) closes over the decrypted rendezvous, so panel.js never sees the passphrase.
+function serveFleet(ctx, opts) {
+  opts = opts || {};
+  const host = opts.host || '127.0.0.1';
+  const server = http.createServer(function (req, res) {
+    if (req.method !== 'GET') { res.writeHead(405); res.end(); return; }
+    const urlPath = String(req.url || '').split('?')[0];
+    if (urlPath === '/api/fleet') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      let data = { machines: [], newReplies: [] };
+      try { data = opts.getFleet(); } catch (e) { /* serve empty on a transient read error */ }
+      res.end(JSON.stringify(data));
+      return;
+    }
+    if (urlPath === '/' || urlPath === '/index.html') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(renderFleetPage());
+      return;
+    }
+    res.writeHead(404); res.end('not found');
+  });
+  return new Promise(function (resolve, reject) {
+    server.on('error', reject);
+    server.listen(opts.port != null ? opts.port : 8898, host, function () {
+      const port = server.address() && server.address().port;
+      resolve({ server: server, port: port, url: 'http://' + host + ':' + port });
+    });
+  });
+}
+
+module.exports = { buildState: buildState, buildActivity: buildActivity, buildMemoryGraph: buildMemoryGraph, buildSnapshot: buildSnapshot, renderSnapshot: renderSnapshot, renderPage: renderPage, renderFleetPage: renderFleetPage, serve: serve, serveFleet: serveFleet };
