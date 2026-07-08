@@ -277,6 +277,30 @@ pins); `keyflip_transfer_pull` (pull+merge a bundle from a LAN peer running `tra
   adds/errors) at `<configDir>/logs/keyflip.log`. (MCP: `keyflip_audit_log` (read).)
 - **Cursor WAL** — `keyflip foreign` now replays a Cursor `-wal` sibling so RECENT chats aren't missed.
 
+## Orchestration, cost, teams, policy, routing (strategic layer)
+
+- **Orchestrator (job queue)** — `keyflip run-job "<prompt>" [--group g]` runs a prompt HEADLESS on the
+  best-headroom account in an isolated config dir; `keyflip jobs [list|run|clear]`; `keyflip fanout
+  "<prompt>" --accounts a,b,c` runs the same prompt across N accounts. This is authorized distributed
+  execution on YOUR OWN accounts/machines — respect each account's ToS + rate limits. (MCP: `keyflip_jobs`
+  (read), `keyflip_job_enqueue` / `keyflip_job_run` / `keyflip_fanout` need `confirm`; run/fanout spend quota.)
+- **Cost intelligence** — `keyflip cost status` (utilization + $ where token totals are known — never
+  inferred from a %), `keyflip cost predict <acct>` (time-to-limit), `keyflip cost by-project` (per-repo
+  token/cost). (MCP: `keyflip_cost_status` / `_cost_predict` / `_cost_by_project`, all read-only.)
+- **Team pool** — `keyflip team publish/pull --dir <shared> --pool <n> --passphrase-file <f>`: an ENCRYPTED
+  shared credential pool with roles (owner sees all; member sees member-tagged). (MCP: `keyflip_team_members`
+  (read), `keyflip_team_publish` / `_team_pull` / `_team_member_add` / `_team_member_remove` need `confirm`.)
+- **Policy engine** — `keyflip policy allow|deny --cwd <dir> --account <a> [--group g]` constrains which
+  account a directory/repo may use; ENFORCED on `keyflip <switch>` (override with `--force`). (MCP:
+  `keyflip_policy_list` / `_policy_check` (read), `_policy_add` / `_policy_remove` need `confirm`.)
+- **Vault backend** — `keyflip vault use op|bw|vault` stores credentials in 1Password / Bitwarden /
+  HashiCorp Vault instead of the OS keychain. (MCP: `keyflip_vault_status` (read), `_vault_use` / `_vault_off`.)
+- **Routing + cache** — `keyflip route set <model> <provider>` / `route arbitrage on` picks the cheapest
+  provider per model; `keyflip cache status|purge` manages the response cache. (MCP: `keyflip_route_list` /
+  `_cache_status` (read), `_route_set` / `_route_clear` / `_cache_purge` need `confirm`.)
+- **Chat integrations** — `keyflip post --to <webhook> --status` posts a non-secret status to Slack/Discord.
+  (MCP: `keyflip_post_status` needs `confirm`.)
+
 ## Finding & resuming past conversations
 
 Transcripts live in `~/.claude/projects` and are account-independent.

@@ -135,6 +135,14 @@ keyflip budget [status|set <hesap> --5h N --7d N|clear <hesap>]   # kullanım-% 
 keyflip notify [status|set --webhook URL --events a,b,c|test|off]   # kota/switch/fleet-reply olaylarında bildirim (webhook + macOS banner)
 keyflip import-env [<dosya>] [--dry-run] [--env]   # provider endpoint'lerini .env dosyasından / ortamdan içe aktar (anahtarlar asla yazılmaz)
 keyflip log [--tail N] [--grep S] [--since ISO]   # eylem/denetim log'unu görüntüle
+keyflip run-job "<prompt>" [--group g] [--strategy best]   # ORKESTRATOR: prompt'u en boş hesapta headless çalıştır (izole)
+keyflip jobs [list|run|clear] · keyflip fanout "<prompt>" --accounts a,b,c   # iş kuyruğu + aynı prompt'u N hesapta koştur
+keyflip cost [status|predict <hesap>|by-project]   # harcama/kullanım, limite-kalan-süre tahmini, repo bazında dağılım
+keyflip team <publish|pull|members|add-member|remove-member> --dir <shared> --pool <n> --passphrase-file <f>   # rollü ŞİFRELİ ekip havuzu
+keyflip policy <list|allow|deny|remove|default|check> [--cwd D --account A --group G]   # bir dizinin hangi hesabı kullanabileceğini kısıtla
+keyflip vault <status|use op|bw|vault|off>   # kimlik bilgilerini 1Password / Bitwarden / HashiCorp Vault'ta sakla
+keyflip route <list|set <model> <provider>|clear|arbitrage on|off> · keyflip cache <status|purge>   # model yönlendirme/arbitraj + yanıt cache
+keyflip post --to <webhook> [--status]   # durumu/olayları Slack/Discord/genel webhook'a gönder
 keyflip run <ad> [-- argümanlar]  # PARALEL oturum: o hesap YALNIZCA bu terminalde
 keyflip add <ad> --token <dosya|->   # ham kimlik bilgisini headless içe aktar
 keyflip mcp [--setup]         # agent'lar için stdio üzerinden MCP sunucusu
@@ -300,7 +308,7 @@ Agent'lar CLI'ı tahmin etmek zorunda kalmasın — keyflip **MCP** konuşur:
 claude mcp add keyflip -- keyflip mcp     # veya: keyflip mcp --setup
 ```
 
-**Tüm CLI yüzeyi 75+ MCP aracı olarak sunulur** — agent hiçbir şeyi kabuğa
+**Tüm CLI yüzeyi 110+ MCP aracı olarak sunulur** — agent hiçbir şeyi kabuğa
 dökmeden yapabilir: hesaplar (`keyflip_status/list/switch/next/add/account_remove`), provider'lar
 (`keyflip_providers`, `keyflip_provider_use/add/remove`, `keyflip_test_provider`, `keyflip_speedtest`),
 **filo** kontrol düzlemi (`keyflip_fleet_status/switch/send_account/collect/keys/trust`),

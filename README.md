@@ -135,6 +135,14 @@ keyflip budget [status|set <acct> --5h N --7d N|clear <acct>]   # usage-% ceilin
 keyflip notify [status|set --webhook URL --events a,b,c|test|off]   # push alerts on quota/switch/fleet-reply (webhook + macOS banner)
 keyflip import-env [<file>] [--dry-run] [--env]   # import provider endpoints from a .env file / the environment (keys never printed)
 keyflip log [--tail N] [--grep S] [--since ISO]   # view the action/audit log
+keyflip run-job "<prompt>" [--group g] [--strategy best]   # ORCHESTRATOR: run a prompt headless on the best-headroom account (isolated)
+keyflip jobs [list|run|clear] · keyflip fanout "<prompt>" --accounts a,b,c   # job queue + run the same prompt across N accounts
+keyflip cost [status|predict <acct>|by-project]   # spend/utilization, time-to-limit prediction, per-repo attribution
+keyflip team <publish|pull|members|add-member|remove-member> --dir <shared> --pool <n> --passphrase-file <f>   # ENCRYPTED team pool with roles
+keyflip policy <list|allow|deny|remove|default|check> [--cwd D --account A --group G]   # constrain which account a directory may use
+keyflip vault <status|use op|bw|vault|off>   # store credentials in 1Password / Bitwarden / HashiCorp Vault
+keyflip route <list|set <model> <provider>|clear|arbitrage on|off> · keyflip cache <status|purge>   # model routing/arbitrage + response cache
+keyflip post --to <webhook> [--status]   # post status/events to Slack/Discord/generic webhook
 keyflip run <name> [-- args]  # PARALLEL session: that account in THIS terminal only
 keyflip add <name> --token <file|->   # headless import of a raw credential
 keyflip mcp [--setup]         # MCP server over stdio so agents can drive keyflip
@@ -303,7 +311,7 @@ Agents shouldn't have to guess the CLI — keyflip speaks **MCP**:
 claude mcp add keyflip -- keyflip mcp     # or see: keyflip mcp --setup
 ```
 
-**The full CLI surface is exposed as 75+ MCP tools**, so an agent can do
+**The full CLI surface is exposed as 110+ MCP tools**, so an agent can do
 everything without shelling out — accounts (`keyflip_status/list/switch/next/add/account_remove`),
 providers (`keyflip_providers`, `keyflip_provider_use/add/remove`, `keyflip_test_provider`,
 `keyflip_speedtest`), the **fleet** control plane (`keyflip_fleet_status/switch/send_account/collect/keys/trust`),

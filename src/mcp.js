@@ -810,6 +810,85 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
     run: async function (ctx, args) { needConfirm(args); return await require('./notify').test(ctx); },
   },
+  // ---- Wave-2 (strategic): cost / team pool / router+cache (orchestrator/policy/integrations/vault appended after the array) ----
+  {
+    name: 'keyflip_cost_status', title: 'Aggregate account spend / utilization',
+    description: 'Aggregate cost/utilization across all saved accounts from keyflip\'s usage cache. Reports 5h/7d rate-limit utilization for every account; reports per-token spend (costUSD) ONLY when the cache carries token totals — the OAuth usage API is percentage-based, so a dollar figure is never inferred from a percentage. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return require('./cost').unified(ctx); },
+  },
+  {
+    name: 'keyflip_cost_predict', title: 'Project time-to-limit for an account',
+    description: 'From the recorded usage trend, project time-to-limit for the 5h and 7d rate windows of one account: current pct, rate-per-hour, and ETA minutes (null when unknown — never fabricated). Read-only.',
+    inputSchema: { type: 'object', properties: { account: { type: 'string' } }, required: ['account'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { const name = core.resolveProfile(ctx, String(args.account)); if (!name) throw new Error("no such account: '" + args.account + "'"); return require('./cost').predict(ctx, name); },
+  },
+  {
+    name: 'keyflip_cost_by_project', title: 'Per-project token + cost attribution',
+    description: 'Scan local ~/.claude/projects transcripts and attribute token usage + estimated cost per working directory / repo. Token counts are MEASURED; costUSD is an ESTIMATE from a dated static pricing snapshot. Work is capped. Read-only.',
+    inputSchema: { type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { return require('./cost').attribute(ctx, { maxSessions: args && args.limit }); },
+  },
+  {
+    name: 'keyflip_team_members', title: 'List team-pool members and account visibility',
+    description: 'Read a shared, encrypted TEAM credential pool: its MEMBERS (id + role) and a CREDS-FREE summary of which accounts it holds + the minimum role each requires. Read-only. Requires the pool passphrase_file.',
+    inputSchema: { type: 'object', properties: { dir: { type: 'string' }, pool: { type: 'string' }, passphrase_file: { type: 'string' } }, required: ['dir', 'pool', 'passphrase_file'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { const teampool = require('./teampool'); const view = teampool.read(ctx, { dir: String(args.dir), pool: String(args.pool), passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() }); if (!view) throw new Error("no such pool '" + args.pool + "'"); return { pool: view.pool, members: view.members, accounts: view.accounts, at: view.at }; },
+  },
+  {
+    name: 'keyflip_team_publish', title: 'Publish accounts to a shared team pool',
+    description: 'Build an ENCRYPTED team credential pool from THIS machine\'s saved accounts into a shared folder, tagging each account with the minimum role allowed to pull it. `accounts` optionally selects names + per-account roles; omit to publish every local account as "member". Mutating (writes encrypted login secrets to a shared folder) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { dir: { type: 'string' }, pool: { type: 'string' }, passphrase_file: { type: 'string' }, accounts: { type: 'object', additionalProperties: { type: 'string', enum: ['owner', 'member'] } }, owner: { type: 'string' }, confirm: confirmProp.confirm }, required: ['dir', 'pool', 'passphrase_file', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const teampool = require('./teampool'); return { published: teampool.publish(ctx, { dir: String(args.dir), pool: String(args.pool), passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim(), accounts: args.accounts || undefined, owner: args.owner ? String(args.owner) : undefined }) }; },
+  },
+  {
+    name: 'keyflip_team_pull', title: 'Pull role-visible accounts from a team pool',
+    description: 'Import from a shared encrypted team pool ONLY the accounts your role (as: owner|member, default member) may see. Existing accounts skipped unless force=true. Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { dir: { type: 'string' }, pool: { type: 'string' }, passphrase_file: { type: 'string' }, as: { type: 'string', enum: ['owner', 'member'] }, force: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['dir', 'pool', 'passphrase_file', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const teampool = require('./teampool'); return { pulled: teampool.pull(ctx, { dir: String(args.dir), pool: String(args.pool), passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim(), asRole: args.as ? String(args.as) : 'member', force: !!args.force }) }; },
+  },
+  {
+    name: 'keyflip_team_member_add', title: 'Add or update a team-pool member',
+    description: 'Add a member (or change role: owner|member) in a shared encrypted team pool. Mutating (rewrites the encrypted pool) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { dir: { type: 'string' }, pool: { type: 'string' }, passphrase_file: { type: 'string' }, id: { type: 'string' }, role: { type: 'string', enum: ['owner', 'member'] }, confirm: confirmProp.confirm }, required: ['dir', 'pool', 'passphrase_file', 'id', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const teampool = require('./teampool'); return { members: teampool.addMember(ctx, { dir: String(args.dir), pool: String(args.pool), passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim(), id: String(args.id), role: args.role ? String(args.role) : 'member' }) }; },
+  },
+  {
+    name: 'keyflip_team_member_remove', title: 'Remove a team-pool member',
+    description: 'Remove a member from a shared encrypted team pool (last owner cannot be removed). Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { dir: { type: 'string' }, pool: { type: 'string' }, passphrase_file: { type: 'string' }, id: { type: 'string' }, confirm: confirmProp.confirm }, required: ['dir', 'pool', 'passphrase_file', 'id', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const teampool = require('./teampool'); return { members: teampool.removeMember(ctx, { dir: String(args.dir), pool: String(args.pool), passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim(), id: String(args.id) }) }; },
+  },
+  {
+    name: 'keyflip_route_list', title: 'List model routes',
+    description: 'Model→provider routing pins and whether arbitrage (always-cheapest) mode is on. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return require('./router').get(ctx); },
+  },
+  {
+    name: 'keyflip_cache_status', title: 'Response cache status',
+    description: 'Response-cache stats: entry count, cap, total bytes and oldest/newest timestamps. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return require('./router').cacheStatus(ctx); },
+  },
+  {
+    name: 'keyflip_route_set', title: 'Pin a model to a provider',
+    description: 'Pin a model onto a configured provider (overrides cheapest-provider selection unless arbitrage is on). Ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { model: { type: 'string' }, provider: { type: 'string' }, confirm: confirmProp.confirm }, required: ['model', 'provider', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); return require('./router').setRoute(ctx, String(args.model), String(args.provider)); },
+  },
+  {
+    name: 'keyflip_route_clear', title: 'Clear a model route',
+    description: 'Remove the routing pin for a model (falls back to cheapest). Ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { model: { type: 'string' }, confirm: confirmProp.confirm }, required: ['model', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); return { cleared: require('./router').clearRoute(ctx, String(args.model)) }; },
+  },
+  {
+    name: 'keyflip_cache_purge', title: 'Purge the response cache',
+    description: 'Delete cached responses — all, or only those older than older_than_ms. Ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { older_than_ms: { type: 'number' }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); return require('./router').cachePurge(ctx, { olderThanMs: typeof args.older_than_ms === 'number' ? args.older_than_ms : undefined }); },
+  },
   {
     name: 'keyflip_agents', title: 'List other agents\' memory + config keyflip can carry',
     description: 'Report which OTHER AI agents have files on THIS machine that keyflip can carry across machines: MEMORY (Cursor `~/.cursor/rules/`, Gemini `~/.gemini/GEMINI.md`, Codex `~/.codex/AGENTS.md`+`memories/` — markdown, no secrets) and CONFIG (`~/.cursor/mcp.json`, `~/.gemini/settings.json`, `~/.codex/config.toml` — carried ONLY secret-scanned + redacted). Read-only; feed into keyflip_migrate_export with agents=true and/or agent_config=true.',
@@ -1136,6 +1215,15 @@ const TOOLS = [
     run: async function (ctx, args) { needConfirm(args); const r = vcs.restore(ctx, String(args.ref)); if (!r.ok) throw new Error('restore failed: ' + (r.reason || 'unknown')); return { restored: args.ref }; },
   },
 ];
+
+// Wave-2 modules that ship their own self-contained MCP tool objects (annotations + confirm-gating
+// inlined). Appended here so each module owns its tool definitions. Order is display-only.
+[
+  require('./orchestrator').mcpTools,
+  require('./policy').mcpTools,
+  require('./integrations').mcpTools,
+  require('./vault').tools,
+].forEach(function (arr) { (Array.isArray(arr) ? arr : []).forEach(function (t) { if (t && t.name) TOOLS.push(t); }); });
 
 // ---- JSON-RPC / MCP plumbing ---------------------------------------------------
 

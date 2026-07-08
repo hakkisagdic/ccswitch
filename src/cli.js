@@ -28,6 +28,8 @@ const mcpreg = require('./mcpreg');
 const desktopgw = require('./desktopgw');
 const importcreds = require('./importcreds');
 const auditview = require('./auditview');
+const cost = require('./cost');
+const router = require('./router');
 const sync = require('./sync');
 const sessions = require('./sessions');
 const mcp = require('./mcp');
@@ -230,6 +232,11 @@ async function cmdSwitch(ctx, rest) {
     print("'" + em + "' is already active.");
     jsonOut({ alreadyActive: { name: name, email: em } });
     return;
+  }
+  // Policy engine: block a switch this directory isn't allowed to use (no-op until rules exist).
+  if (!force) {
+    try { require('./policy').enforce(ctx, { cwd: process.cwd(), account: name }); }
+    catch (e) { if (e && e.code === 'POLICY_DENIED') return fail(e.message + '  (override with --force)'); throw e; }
   }
   logmod.log('switch requested -> ' + name);
 
@@ -698,6 +705,193 @@ async function cmdNotify(ctx, rest) {
     return;
   }
   return fail('usage: keyflip notify [status | set --webhook URL --events a,b,c [--desktop|--no-desktop] | test | off]');
+}
+
+// ===== Wave-2 (strategic): orchestrator / cost / team / policy / vault / integrations / router =====
+
+// Headless job queue: run a prompt on the best available account, isolated.
+async function cmdRunJob(ctx, rest) {
+  const orchestrator = require('./orchestrator');
+  const fv = function (n) { const i = rest.indexOf(n); return i !== -1 ? rest[i + 1] : undefined; };
+  const group = fv('--group'); const strategy = fv('--strategy') || 'best';
+  const prompt = rest.filter(function (a, i) { return a.indexOf('-') !== 0 && rest[i - 1] !== '--group' && rest[i - 1] !== '--strategy'; }).join(' ').trim();
+  if (!prompt) return fail('usage: keyflip run-job "<prompt>" [--group <g>] [--strategy best|next-available]');
+  let job; try { job = orchestrator.enqueue(ctx, { prompt: prompt, cwd: process.cwd(), group: group }); } catch (e) { return fail(e.message); }
+  const done = await orchestrator.runJob(ctx, job, { strategy: strategy });
+  if (JSON_MODE) { jsonOut({ job: done }); return; }
+  if (done.status === 'done') { print(style.ok('✅') + ' ran on ' + done.account); print(done.result || ''); }
+  else fail('job failed' + (done.account ? ' on ' + done.account : '') + ': ' + (done.error || 'unknown'));
+}
+async function cmdJobs(ctx, rest) {
+  const orchestrator = require('./orchestrator');
+  const sub = rest[0] || 'list';
+  const fv = function (n) { const i = rest.indexOf(n); return i !== -1 ? rest[i + 1] : undefined; };
+  if (sub === 'list') {
+    const jobs = orchestrator.list(ctx);
+    if (JSON_MODE) { jsonOut({ jobs: jobs }); return; }
+    if (!jobs.length) { print('no jobs — queue one:  keyflip run-job "<prompt>"'); return; }
+    jobs.forEach(function (j) { print(style.bold(j.id.slice(0, 8)) + '  ' + String(j.status).padEnd(7) + '  ' + (j.account || '-') + '  ' + String(j.prompt).replace(/\s+/g, ' ').slice(0, 60)); });
+    return;
+  }
+  if (sub === 'run') {
+    const done = await orchestrator.runNext(ctx, { strategy: fv('--strategy') || 'best' });
+    if (JSON_MODE) { jsonOut({ job: done }); return; }
+    if (!done) { print('no queued jobs.'); return; }
+    if (done.status === 'done') { print(style.ok('✅') + ' ran ' + done.id.slice(0, 8) + ' on ' + done.account); print(done.result || ''); }
+    else fail('job ' + done.id.slice(0, 8) + ' failed: ' + (done.error || 'unknown'));
+    return;
+  }
+  if (sub === 'clear') { let n; try { n = orchestrator.clear(ctx, { status: fv('--status') }); } catch (e) { return fail(e.message); } if (JSON_MODE) { jsonOut({ cleared: n }); return; } print('🗑  cleared ' + n + ' job' + (n === 1 ? '' : 's')); return; }
+  return fail('unknown: keyflip jobs ' + sub + ' (use: list | run | clear)');
+}
+async function cmdFanout(ctx, rest) {
+  const orchestrator = require('./orchestrator');
+  const i = rest.indexOf('--accounts'); const accountsArg = i !== -1 ? rest[i + 1] : undefined;
+  const prompt = rest.filter(function (a, idx) { return a.indexOf('-') !== 0 && rest[idx - 1] !== '--accounts'; }).join(' ').trim();
+  if (!prompt || !accountsArg) return fail('usage: keyflip fanout "<prompt>" --accounts a,b,c');
+  const names = accountsArg.split(',').map(function (s) { return s.trim(); }).filter(Boolean).map(function (a) { return core.resolveProfile(ctx, a) || a; });
+  const results = await orchestrator.fanOut(ctx, prompt, names, { cwd: process.cwd() });
+  if (JSON_MODE) { jsonOut({ results: results }); return; }
+  results.forEach(function (r) { print(style.bold('── ' + r.account + ' ──')); print(r.error ? style.err('error: ' + r.error) : (r.result || '')); });
+}
+
+// COST intelligence: unified spend, prediction, per-project attribution.
+function cmdCost(ctx, rest) {
+  const sub = rest[0] || 'status';
+  const args = rest.slice(1);
+  if (sub === 'status') {
+    const u = cost.unified(ctx);
+    if (JSON_MODE) { jsonOut(u); return; }
+    (u.accounts || []).forEach(function (a) {
+      const usd = a.measured ? '  ' + cost.fmtUsd(a.costUSD) : '';
+      print(style.bold(String(a.name).padEnd(16)) + ' 5h ' + (a.fiveHourPct == null ? '?' : Math.round(a.fiveHourPct) + '%') + ' · 7d ' + (a.sevenDayPct == null ? '?' : Math.round(a.sevenDayPct) + '%') + usd);
+    });
+    if (u.totals) print(style.dim('totals: ' + (u.totals.accounts || 0) + ' account(s)' + (u.totals.costUSD != null ? ' · ' + cost.fmtUsd(u.totals.costUSD) : '')));
+    if (u.note) print(style.dim(u.note));
+    return;
+  }
+  if (sub === 'predict') {
+    const acct = args.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+    if (!acct) return fail('usage: keyflip cost predict <account>');
+    const name = core.resolveProfile(ctx, acct); if (!name) return fail("no such account: '" + acct + "'");
+    const p = cost.predict(ctx, name);
+    if (JSON_MODE) { jsonOut(p); return; }
+    (p.windows || []).forEach(function (w) { print(style.bold(w.metric) + '  ' + Math.round(w.pct || 0) + '%  rate ' + (w.ratePerHour == null ? '?' : w.ratePerHour + '%/h') + '  eta ' + cost.fmtEta(w.etaMinutes)); });
+    return;
+  }
+  if (sub === 'by-project') {
+    const li = args.indexOf('--limit');
+    const r = cost.attribute(ctx, { maxSessions: li !== -1 ? parseInt(args[li + 1], 10) : undefined });
+    if (JSON_MODE) { jsonOut(r); return; }
+    (r.byCwd || []).forEach(function (b) { print(style.bold(String(b.cwd || '?').slice(-40).padEnd(40)) + '  ' + b.sessions + ' sess · ' + (b.tokens && b.tokens.total || 0) + ' tok' + (b.costUSD != null ? '  ' + cost.fmtUsd(b.costUSD) + (b.estimate ? ' (est)' : '') : '')); });
+    if (r.note) print(style.dim(r.note));
+    return;
+  }
+  return fail('unknown: keyflip cost ' + sub + ' (use: status | predict <acct> | by-project)');
+}
+
+// TEAM POOL: a shared, encrypted credential pool with role-scoped visibility.
+const TEAM_VALUE_FLAGS = ['--dir', '--pool', '--passphrase-file', '--role', '--as', '--owner', '--account'];
+function collectAccountFlags(rest) {
+  const map = {}; let any = false;
+  for (let i = 0; i < rest.length; i++) { if (rest[i] === '--account' && rest[i + 1]) { any = true; const spec = rest[i + 1]; const c = spec.lastIndexOf(':'); if (c > 0) map[spec.slice(0, c)] = spec.slice(c + 1); else map[spec] = 'member'; i++; } }
+  return any ? map : null;
+}
+async function cmdTeam(ctx, rest) {
+  const teampool = require('./teampool');
+  const sub = rest[0];
+  if (sub === 'list' || sub === undefined) {
+    const pools = teampool.list(ctx);
+    if (JSON_MODE) { jsonOut({ pools: pools }); return; }
+    if (!pools.length) { print(style.dim('No team pools yet. Publish one: keyflip team publish --dir <shared> --pool <name> --passphrase-file <f>')); return; }
+    print(style.bold('Team pools:'));
+    pools.forEach(function (p) { print('  ' + style.bold(String(p.pool).padEnd(16)) + ' ' + style.dim((p.role || '?') + ' · ' + (p.dir || '?') + ' · ' + String(p.at || '').slice(0, 16).replace('T', ' '))); });
+    return;
+  }
+  const dir = flagVal(rest, '--dir'); const pool = flagVal(rest, '--pool'); const passphrase = readSecretArg(rest, '--passphrase-file');
+  if (!dir) return fail('a shared pool directory is required: --dir <shared-folder>');
+  if (!pool) return fail('a pool name is required: --pool <name>');
+  if (!passphrase) return fail('a pool passphrase is required: --passphrase-file <file>');
+  const base = { dir: dir, pool: pool, passphrase: passphrase };
+  try {
+    if (sub === 'publish') {
+      const r = teampool.publish(ctx, Object.assign({}, base, { accounts: collectAccountFlags(rest), owner: flagVal(rest, '--owner') || undefined }));
+      if (JSON_MODE) { jsonOut({ teamPublish: r }); return; }
+      print(style.ok('🔒') + ' published pool ' + style.bold(r.pool) + ' → ' + style.bold(r.dir) + ' (encrypted).');
+      r.accounts.forEach(function (a) { print('   ' + style.ok('•') + ' ' + a.name + ' ' + style.dim('(' + a.role + ')')); });
+      return;
+    }
+    if (sub === 'pull') {
+      const r = teampool.pull(ctx, Object.assign({}, base, { asRole: flagVal(rest, '--as') || flagVal(rest, '--role') || 'member', force: rest.indexOf('--force') !== -1 }));
+      if (JSON_MODE) { jsonOut({ teamPull: r }); return; }
+      print(style.ok('📥') + ' pulled ' + style.bold(r.pool) + ' as ' + style.bold(r.role) + ': imported ' + r.imported.length + ', skipped ' + r.skipped.length + ' (of ' + r.visible.length + ' visible).');
+      if (r.imported.length) print('   ' + style.dim('imported: ' + r.imported.join(', ')));
+      return;
+    }
+    if (sub === 'members') { const ms = teampool.members(ctx, base); if (JSON_MODE) { jsonOut({ members: ms }); return; } print(style.bold('Members of ' + pool + ':')); ms.forEach(function (m) { print('  ' + style.ok('●') + ' ' + m.id + ' ' + style.dim('(' + m.role + ')')); }); return; }
+    if (sub === 'add-member') { const id = positionals(rest.slice(1), TEAM_VALUE_FLAGS)[0]; const role = flagVal(rest, '--role') || 'member'; if (!id) return fail('usage: keyflip team add-member <id> [--role owner|member] --dir <shared> --pool <name> --passphrase-file <f>'); teampool.addMember(ctx, Object.assign({}, base, { id: id, role: role })); if (JSON_MODE) { jsonOut({ members: teampool.members(ctx, base) }); return; } print(style.ok('✅') + ' ' + style.bold(id) + ' is now a ' + role + ' of ' + style.bold(pool) + '.'); return; }
+    if (sub === 'remove-member') { const id = positionals(rest.slice(1), TEAM_VALUE_FLAGS)[0]; if (!id) return fail('usage: keyflip team remove-member <id> --dir <shared> --pool <name> --passphrase-file <f>'); teampool.removeMember(ctx, Object.assign({}, base, { id: id })); if (JSON_MODE) { jsonOut({ members: teampool.members(ctx, base) }); return; } print(style.ok('✅') + ' removed ' + style.bold(id) + ' from ' + style.bold(pool) + '.'); return; }
+  } catch (e) { return fail(e.message); }
+  return fail('usage: keyflip team <list|publish|pull|members|add-member|remove-member> --dir <shared> --pool <name> --passphrase-file <f>');
+}
+
+// POLICY engine: constrain which account a directory/repo may use.
+function cmdPolicy(ctx, rest) {
+  const policy = require('./policy');
+  const sub = rest[0]; const args = rest.slice(1);
+  function multi(flag) { const out = []; for (let i = 0; i < args.length; i++) if (args[i] === flag && args[i + 1] != null) out.push(args[++i]); return out; }
+  function one(flag) { const j = args.indexOf(flag); return j !== -1 ? args[j + 1] : undefined; }
+  function label(b) { return [].concat(b.accounts || [], (b.groups || []).map(function (g) { return '@' + g; })).join(','); }
+  switch (sub) {
+    case undefined: case 'list': {
+      const st = policy.get(ctx);
+      if (JSON_MODE) { jsonOut(st); return; }
+      print('default: ' + st.default);
+      if (!st.rules.length) { print('no policy rules — add one:  keyflip policy allow --cwd <dir> --account <name>'); return; }
+      st.rules.forEach(function (r) { const scope = [r.match.cwdPrefix ? 'cwd:' + r.match.cwdPrefix : null, r.match.repo ? 'repo:' + r.match.repo : null].filter(Boolean).join(' ') || '(global)'; const parts = []; if (r.allow) parts.push('allow ' + label(r.allow)); if (r.deny) parts.push('deny ' + label(r.deny)); print(style.bold(r.id) + '  ' + scope + '  ' + parts.join('  ') + (r.note ? '  # ' + r.note : '')); });
+      return;
+    }
+    case 'allow': case 'deny': { const match = {}; const cwd = one('--cwd'); if (cwd) match.cwdPrefix = cwd; const repo = one('--repo'); if (repo) match.repo = repo; const rule = { id: one('--id'), match: match, note: one('--note') }; rule[sub] = { accounts: multi('--account'), groups: multi('--group') }; let added; try { added = policy.addRule(ctx, rule); } catch (e) { return fail(e.message); } if (JSON_MODE) { jsonOut({ added: added }); return; } print(style.ok('✅') + ' added ' + sub + ' rule ' + added.id); return; }
+    case 'remove': case 'rm': { const id = args.filter(function (a) { return a.indexOf('-') !== 0; })[0]; if (!id) return fail('usage: keyflip policy remove <id>'); const ok = policy.removeRule(ctx, id); if (JSON_MODE) { jsonOut({ removed: ok ? id : null }); return; } print(ok ? '🗑  removed rule ' + id : 'no rule with id: ' + id); return; }
+    case 'default': { let set; try { set = policy.setDefault(ctx, args[0]); } catch (e) { return fail(e.message); } if (JSON_MODE) { jsonOut({ default: set }); return; } print(style.ok('✅') + ' default policy = ' + set); return; }
+    case 'check': { const acct = one('--account') || args.filter(function (a) { return a.indexOf('-') !== 0; })[0]; if (!acct) return fail('usage: keyflip policy check --account <name> [--cwd <dir>] [--repo <r>]'); const name = core.resolveProfile(ctx, acct) || acct; const res = policy.evaluate(ctx, { account: name, cwd: one('--cwd') || process.cwd(), repo: one('--repo') }); if (JSON_MODE) { jsonOut(res); return; } print((res.allowed ? style.ok('ALLOWED') : style.err('DENIED')) + '  ' + name + '  — ' + res.reason); return; }
+    default: return fail('unknown: keyflip policy ' + sub + ' (use: list | allow | deny | remove <id> | default <allow|deny> | check)');
+  }
+}
+
+// VAULT backend: store credentials in 1Password / Bitwarden / HashiCorp Vault.
+function cmdVault(ctx, rest) {
+  const vault = require('./vault');
+  let out; try { out = vault.cli(ctx, rest); } catch (e) { return fail(e.message); }
+  if (JSON_MODE) { jsonOut(out.data); return; }
+  out.lines.forEach(function (l) { print(l); });
+}
+
+// Post status/events to a Slack/Discord/generic webhook.
+async function cmdPost(ctx, rest) {
+  const integrations = require('./integrations');
+  const r = await integrations.cli(ctx, rest, {});
+  if (r.error) return fail(r.error);
+  if (JSON_MODE) { jsonOut(r); return; }
+  if (r.ok) print(style.ok('✅') + ' ' + r.text); else fail(r.text);
+}
+
+// Model ROUTING / arbitrage + response CACHE.
+function cmdRoute(ctx, rest) {
+  const sub = rest[0]; const args = rest.slice(1);
+  switch (sub) {
+    case 'list': case undefined: { const g = router.get(ctx); if (JSON_MODE) { jsonOut(g); return; } print('Model routes (arbitrage: ' + (g.arbitrage ? 'on' : 'off') + '):'); const models = Object.keys(g.routes); if (!models.length) print('  (no pins — routing picks the cheapest provider that serves each model)'); models.forEach(function (m) { print('  ' + m + ' → ' + g.routes[m]); }); return; }
+    case 'set': { if (!args[0] || !args[1]) return fail('usage: keyflip route set <model> <provider>'); let r; try { r = router.setRoute(ctx, args[0], args[1]); } catch (e) { return fail(e.message); } if (JSON_MODE) { jsonOut(r); return; } print('📌 pinned ' + r.model + ' → ' + r.provider); return; }
+    case 'clear': { if (!args[0]) return fail('usage: keyflip route clear <model>'); const ok = router.clearRoute(ctx, args[0]); if (JSON_MODE) { jsonOut({ cleared: ok }); return; } print(ok ? '🗑  cleared route: ' + args[0] : 'no route for ' + args[0]); return; }
+    case 'arbitrage': { const on = args[0] === 'on' || args[0] === 'true'; const off = args[0] === 'off' || args[0] === 'false'; if (!on && !off) return fail('usage: keyflip route arbitrage <on|off>'); const v = router.setArbitrage(ctx, on); if (JSON_MODE) { jsonOut({ arbitrage: v }); return; } print('arbitrage: ' + (v ? 'on' : 'off')); return; }
+    default: return fail('unknown: keyflip route ' + sub + ' (use: list | set <model> <provider> | clear <model> | arbitrage <on|off>)');
+  }
+}
+function cmdCache(ctx, rest) {
+  const sub = rest[0]; const args = rest.slice(1);
+  if (sub === 'status' || sub === undefined) { const s = router.cacheStatus(ctx); if (JSON_MODE) { jsonOut(s); return; } print('Response cache (' + s.dir + '):'); print('  entries: ' + s.count + ' / ' + s.cap + '   ' + s.bytes + ' bytes'); if (s.oldest) print('  oldest: ' + s.oldest + '   newest: ' + s.newest); return; }
+  if (sub === 'purge') { let olderThanMs; const i = args.indexOf('--older-than-ms'); if (i !== -1 && args[i + 1]) olderThanMs = Number(args[i + 1]); const r = router.cachePurge(ctx, { olderThanMs: olderThanMs }); if (JSON_MODE) { jsonOut(r); return; } print('🗑  purged ' + r.removed + ' cache entr' + (r.removed === 1 ? 'y' : 'ies')); return; }
+  return fail('unknown: keyflip cache ' + sub + ' (use: status | purge [--older-than-ms N])');
 }
 
 // MCP server (stdio) so agents can inspect/switch accounts themselves.
@@ -3645,6 +3839,26 @@ async function dispatch(ctx, cmd, rest) {
         return cmdShellInit(rest);
       case 'notify':
         return (rest[0] === 'set' || rest[0] === 'off') ? withLock(ctx, function () { return cmdNotify(ctx, rest); }) : cmdNotify(ctx, rest);
+      case 'run-job':
+        return cmdRunJob(ctx, rest);
+      case 'jobs':
+        return (rest[0] === 'clear') ? withLock(ctx, function () { return cmdJobs(ctx, rest); }) : cmdJobs(ctx, rest);
+      case 'fanout': case 'fan-out':
+        return cmdFanout(ctx, rest);
+      case 'cost':
+        return cmdCost(ctx, rest);
+      case 'team':
+        return cmdTeam(ctx, rest);
+      case 'policy':
+        return (['allow', 'deny', 'remove', 'rm', 'default'].indexOf(rest[0]) !== -1) ? withLock(ctx, function () { return cmdPolicy(ctx, rest); }) : cmdPolicy(ctx, rest);
+      case 'vault':
+        return (rest[0] === 'use' || rest[0] === 'off') ? withLock(ctx, function () { return cmdVault(ctx, rest); }) : cmdVault(ctx, rest);
+      case 'post':
+        return cmdPost(ctx, rest);
+      case 'route':
+        return (rest[0] === 'set' || rest[0] === 'clear' || rest[0] === 'arbitrage') ? withLock(ctx, function () { return cmdRoute(ctx, rest); }) : cmdRoute(ctx, rest);
+      case 'cache':
+        return (rest[0] === 'purge') ? withLock(ctx, function () { return cmdCache(ctx, rest); }) : cmdCache(ctx, rest);
       case 'versioning':
         return cmdVersion(ctx, rest);
       case 'history':
