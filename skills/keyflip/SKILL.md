@@ -256,6 +256,27 @@ pins); `keyflip_transfer_pull` (pull+merge a bundle from a LAN peer running `tra
 `keyflip_autoswitch_tick` (one usage-check that may switch at the threshold). Every mutating one needs
 `confirm:true`; secrets (WebDAV/passphrase) are passed as `*_file` paths, never inline.
 
+## Groups, budgets, notifications, shell activation, audit log
+
+- **Groups/tags** — `keyflip group tag <acct> <g…>` pools accounts; `keyflip next --group <g>` rotates
+  ONLY within that pool (failover/rotation scoping). (MCP: `keyflip_groups` (read), `keyflip_group_tag`
+  / `keyflip_group_untag` need `confirm`.)
+- **Budgets** — `keyflip budget set <acct> --5h N --7d N` (or `*` for a default over every account)
+  sets usage-% ceilings; `keyflip budget status` flags each account at/over its ceiling (breach) or
+  within 10% (warn), reading the usage cache (refresh with `keyflip list --usage`). (MCP:
+  `keyflip_budget_status` (read), `keyflip_budget_set` / `keyflip_budget_clear` need `confirm`.)
+- **Notifications** — `keyflip notify set --webhook URL --events quota,switch,fleet-reply` POSTs a
+  NON-SECRET `{event,payload,at}` on those events (+ optional macOS banner). `keyflip notify test`
+  verifies wiring. (MCP: `keyflip_notify_status` (read), `keyflip_notify_set` / `keyflip_notify_test`.)
+- **Shell auto-activation** — `eval "$(keyflip shell-init zsh)"` makes `cd` into a `keyflip link`-pinned
+  directory auto-switch the account (direnv-style; re-switches only when the pin changes). (MCP:
+  `keyflip_shell_init` returns the snippet.)
+- **`.env` import** — `keyflip import-env [file] [--dry-run]` detects Anthropic/OpenAI creds in a .env
+  file or the environment and saves them as providers (keys never printed). (MCP: `keyflip_import_env`.)
+- **Audit log** — `keyflip log [--tail N] [--grep S] [--since ISO]` views the action log (switches/
+  adds/errors) at `<configDir>/logs/keyflip.log`. (MCP: `keyflip_audit_log` (read).)
+- **Cursor WAL** — `keyflip foreign` now replays a Cursor `-wal` sibling so RECENT chats aren't missed.
+
 ## Finding & resuming past conversations
 
 Transcripts live in `~/.claude/projects` and are account-independent.

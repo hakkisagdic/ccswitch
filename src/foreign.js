@@ -188,7 +188,16 @@ function walNote(filePath) {
 function normalize(filePath, input) {
   const buf = asBuffer(input);
   const tool = detect(filePath, buf);
-  if (tool === 'cursor') { const out = Object.assign({ tool: 'cursor' }, parseCursor(buf)); const w = walNote(filePath); if (w) out.warning = w; return out; }
+  if (tool === 'cursor') {
+    // Replay the WAL sibling so RECENT (uncheckpointed) Cursor chats aren't missed. applyOverlay
+    // never throws and returns the same buffer when there's nothing to merge — only warn if a -wal
+    // exists but we could NOT fold it in.
+    let dbBuf = buf, merged = false;
+    if (filePath) { try { const walBuf = fs.readFileSync(filePath + '-wal'); const m = require('./walmerge').applyOverlay(buf, walBuf); if (m !== buf) { dbBuf = m; merged = true; } } catch (e) { /* no -wal sibling */ } }
+    const out = Object.assign({ tool: 'cursor' }, parseCursor(dbBuf));
+    if (!merged) { const w = walNote(filePath); if (w) out.warning = w; }
+    return out;
+  }
   if (tool === 'jsonl') return Object.assign({ tool: 'jsonl' }, require('./transcript').parse(buf.toString('utf8')));
   if (tool === 'json') return Object.assign({ tool: 'json' }, parseJson(buf.toString('utf8')));
   if (tool === 'yaml') return Object.assign({ tool: 'copilot' }, parseYaml(buf.toString('utf8')));

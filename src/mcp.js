@@ -33,6 +33,7 @@ const archive = require('./archive');
 const vcs = require('./vcs');
 const memorymod = require('./memory');
 const llm = require('./llm');
+const auditview = require('./auditview');
 const fs = require('fs');
 
 // Mutating tools all gate on confirm:true — the agent must ask the user first.
@@ -734,6 +735,80 @@ const TOOLS = [
       if (args.threshold !== undefined) opts.threshold = args.threshold;
       return await require('./autoswitch').tick(ctx, opts);
     },
+  },
+
+  // ---- Wave-1 features (2026-07-07): groups / budget / import-env / shell-init / audit-log / notify ----
+  {
+    name: 'keyflip_groups', title: 'List account groups/tags',
+    description: 'Account groups (tags) used to SCOPE rotation and failover to a pool. With no args returns { groups: {group->members}, tags: {account->tags} }; with group="<g>" returns that group\'s members. Read-only.',
+    inputSchema: { type: 'object', properties: { group: { type: 'string' } }, additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { const groups = require('./groups'); if (args && args.group) return { group: String(args.group), members: groups.membersOf(ctx, String(args.group)) }; return { groups: groups.listGroups(ctx), tags: groups.readAll(ctx) }; },
+  },
+  {
+    name: 'keyflip_group_tag', title: 'Tag an account into a group',
+    description: 'Add one or more group tags to an account so group-scoped rotation (`keyflip next --group <g>`) and failover can target it. Mutating — ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { account: { type: 'string' }, groups: { type: 'array', items: { type: 'string' } }, confirm: confirmProp.confirm }, required: ['account', 'groups', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const g = require('./groups'); const name = core.resolveProfile(ctx, String(args.account)); if (!name) throw new Error("no such account: '" + args.account + "'"); const tags = Array.isArray(args.groups) ? args.groups : []; if (!tags.length) throw new Error('provide at least one group'); let cur = g.tagsFor(ctx, name); tags.forEach(function (t) { cur = g.addTag(ctx, name, String(t)); }); return { account: name, tags: cur }; },
+  },
+  {
+    name: 'keyflip_group_untag', title: 'Remove an account from a group',
+    description: 'Remove a group tag from an account. Mutating — ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { account: { type: 'string' }, group: { type: 'string' }, confirm: confirmProp.confirm }, required: ['account', 'group', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const g = require('./groups'); const name = core.resolveProfile(ctx, String(args.account)); if (!name) throw new Error("no such account: '" + args.account + "'"); return { account: name, tags: g.removeTag(ctx, name, String(args.group)) }; },
+  },
+  {
+    name: 'keyflip_budget_status', title: 'Usage budgets + breach alerts',
+    description: 'Report per-account usage BUDGETS (5-hour / 7-day % ceilings, per account or a "*" default that covers every account) alongside current cached usage, flagging every account/window at/over its ceiling ("breach") or within 10% ("warn"). Reads keyflip\'s usage cache — does NOT fetch (run keyflip_usage_history first to refresh). Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return require('./budget').status(ctx); },
+  },
+  {
+    name: 'keyflip_budget_set', title: 'Set a usage-budget ceiling',
+    description: 'Set/merge a usage-budget ceiling for an account: five_hour_pct and/or seven_day_pct (0-100). Use account "*" for the default covering every account. Pass null for a window to remove just that ceiling; omit to leave unchanged. Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { account: { type: 'string' }, five_hour_pct: { type: ['number', 'null'] }, seven_day_pct: { type: ['number', 'null'] }, confirm: confirmProp.confirm }, required: ['account', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const budget = require('./budget'); const raw = String(args.account); const name = (raw === '*' || raw === 'default' || raw === 'defaults') ? '*' : (core.resolveProfile(ctx, raw) || raw); const limits = {}; if (args.five_hour_pct !== undefined) limits.fiveHourPct = args.five_hour_pct; if (args.seven_day_pct !== undefined) limits.sevenDayPct = args.seven_day_pct; const l = await lock.acquire(ctx.configDir); try { return { set: { account: name, limits: budget.setLimit(ctx, name, limits) } }; } finally { l.release(); } },
+  },
+  {
+    name: 'keyflip_budget_clear', title: 'Clear an account\'s usage budget',
+    description: 'Remove ALL usage-budget ceilings for an account (or the "*" defaults). Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { account: { type: 'string' }, confirm: confirmProp.confirm }, required: ['account', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const budget = require('./budget'); const raw = String(args.account); const name = (raw === '*' || raw === 'default' || raw === 'defaults') ? '*' : (core.resolveProfile(ctx, raw) || raw); const l = await lock.acquire(ctx.configDir); try { return { cleared: budget.clear(ctx, name) ? name : null }; } finally { l.release(); } },
+  },
+  {
+    name: 'keyflip_import_env', title: 'Import providers from a .env / environment',
+    description: 'Detect Anthropic/OpenAI credentials in a .env file (pass `path`) or the current process environment (omit `path`) and save each as a keyflip provider endpoint. Returns what was imported with every key REDACTED — keys are never echoed back. Mutating — ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Path to a .env file. Omit to import from the current environment.' }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const importcreds = require('./importcreds'); const res = args.path ? importcreds.fromFile(ctx, String(args.path)) : importcreds.fromEnv(ctx, process.env); const l = await lock.acquire(ctx.configDir); try { return importcreds.apply(ctx, res.candidates); } finally { l.release(); } },
+  },
+  {
+    name: 'keyflip_shell_init', title: 'Shell auto-activation hook',
+    description: 'Return the shell snippet (bash/zsh/fish) for direnv-style account auto-activation: once added to the shell rc file, cd-ing into a directory pinned with `keyflip link` auto-switches the CLI to that account. Install: `eval "$(keyflip shell-init zsh)"` (fish: `keyflip shell-init fish | source`). Read-only — returns text only.',
+    inputSchema: { type: 'object', properties: { shell: { type: 'string', enum: ['bash', 'zsh', 'fish'] } }, required: ['shell'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { const shellhook = require('./shellhook'); return { shell: String(args.shell), snippet: shellhook.hook(String(args.shell)) }; },
+  },
+  {
+    name: 'keyflip_audit_log', title: 'Action / audit log',
+    description: 'Recent entries from keyflip\'s action log (account switches, adds, cleans, errors) at <configDir>/logs/keyflip.log. Filters: grep (case-insensitive substring on the message) and since (ISO; entries at/after it). Newest last. Read-only.',
+    inputSchema: { type: 'object', properties: { limit: { type: 'integer', description: 'Max entries (newest). Default 50.' }, grep: { type: 'string' }, since: { type: 'string', description: 'ISO timestamp.' } }, additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { args = args || {}; return { entries: auditview.tail(ctx, { limit: args.limit, grep: args.grep, since: args.since }) }; },
+  },
+  {
+    name: 'keyflip_notify_status', title: 'Notification settings',
+    description: 'Show keyflip\'s outbound notification config: webhook URL (if any), enabled events (quota/switch/fleet-reply/…), and whether macOS desktop banners are on. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { const c = require('./notify').getConfig(ctx); return { webhook: c.webhook, events: c.events, desktop: c.desktop }; },
+  },
+  {
+    name: 'keyflip_notify_set', title: 'Configure notifications',
+    description: 'Set the notification webhook (http(s) only), the enabled event list, and/or the macOS desktop-banner toggle. keyflip POSTs a NON-SECRET summary { event, payload, at } on each enabled event. Pass webhook:null to clear it. Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { webhook: { type: ['string', 'null'] }, events: { type: 'array', items: { type: 'string' } }, desktop: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const patch = {}; if ('webhook' in args) patch.webhook = args.webhook == null ? null : String(args.webhook); if (Array.isArray(args.events)) patch.events = args.events; if (typeof args.desktop === 'boolean') patch.desktop = args.desktop; return { notify: require('./notify').setConfig(ctx, patch) }; },
+  },
+  {
+    name: 'keyflip_notify_test', title: 'Send a test notification',
+    description: 'Fire a synthetic "test" event through the configured sinks (webhook POST and/or macOS banner) so the user can verify wiring. Outbound side effect — ask the user first, then confirm=true.',
+    inputSchema: { type: 'object', properties: { confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); return await require('./notify').test(ctx); },
   },
   {
     name: 'keyflip_agents', title: 'List other agents\' memory + config keyflip can carry',

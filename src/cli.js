@@ -26,6 +26,8 @@ const share = require('./share');
 const skill = require('./skill');
 const mcpreg = require('./mcpreg');
 const desktopgw = require('./desktopgw');
+const importcreds = require('./importcreds');
+const auditview = require('./auditview');
 const sync = require('./sync');
 const sessions = require('./sessions');
 const mcp = require('./mcp');
@@ -154,6 +156,12 @@ function usage() {
   print('  keyflip autoswitch            watch usage; auto-swap the CLI account at a threshold');
   print('                                 (--threshold 90 --interval 60 --strategy next-available)');
   print('  keyflip link [name|--remove]  map this directory to an account for `run`');
+  print('  keyflip shell-init <bash|zsh|fish>   print a shell hook so `cd` auto-activates the pinned account (eval "$(keyflip shell-init zsh)")');
+  print('  keyflip group [list|members <g>|tag <acct> <g…>|untag <acct> <g>]   tag accounts into pools; `next --group <g>` rotates within one');
+  print('  keyflip budget [status|set <acct> --5h N --7d N|clear <acct>]   usage ceilings + breach/near-breach alerts');
+  print('  keyflip notify [status|set --webhook URL --events a,b,c|test|off]   push alerts on quota/switch/fleet-reply');
+  print('  keyflip import-env [<file>] [--dry-run] [--env]   import provider endpoints from a .env file / the environment');
+  print('  keyflip log [--tail N] [--grep S] [--since ISO]   view the action/audit log');
   print('  keyflip run <name> [-- args]  PARALLEL session: run Claude as that account in THIS');
   print('                                 terminal only (asks first; --no-share = bare profile)');
   print('  keyflip add <name> --token <file|->   headless import of a raw credential (asks first;');
@@ -348,6 +356,14 @@ async function cmdNext(ctx, rest) {
     const e = list[(idx + k) % list.length];
     if (!e.active) candidates.push(e);
   }
+  // --group <g>: scope rotation to a pool (keyflip group tag …). Preserves rotation order.
+  const gi = rest.indexOf('--group');
+  if (gi !== -1 && rest[gi + 1]) {
+    const grp = rest[gi + 1];
+    const scoped = require('./groups').filterProfiles(ctx, candidates, grp);
+    if (!scoped.length) return fail("no other account in group '" + grp + "' to rotate to (tag one: keyflip group tag <account> " + grp + ')');
+    candidates.length = 0; Array.prototype.push.apply(candidates, scoped);
+  }
   if (!candidates.length) return fail('no other account to rotate to');
 
   const si = rest.indexOf('--strategy');
@@ -370,8 +386,9 @@ async function cmdNext(ctx, rest) {
   // Forward the switch-relevant flags (incl. single-dash -y) so `next -y` doesn't
   // re-prompt; drop --strategy (already consumed here).
   const SWITCH_FLAGS = ['-y', '--yes', '--restart', '--force'];
-  const forward = rest.filter(function (a) {
-    return SWITCH_FLAGS.indexOf(a) !== -1 || (a.indexOf('--') === 0 && a !== '--strategy');
+  const forward = rest.filter(function (a, i) {
+    if (rest[i - 1] === '--group') return false; // the group NAME value, not a flag
+    return SWITCH_FLAGS.indexOf(a) !== -1 || (a.indexOf('--') === 0 && a !== '--strategy' && a !== '--group');
   });
   return cmdSwitch(ctx, [target.name].concat(forward));
 }
@@ -484,6 +501,9 @@ function cmdLink(ctx, rest) {
   const arg = rest.filter(function (a) { return a.indexOf('-') !== 0; })[0];
   if (!arg) {
     const hit = links.lookup(ctx, process.cwd());
+    // --porcelain: emit ONLY the pinned account name (or nothing) on stdout, for the shell hook
+    // (`keyflip shell-init`) to eval safely. No decoration, so the hook can charset-validate it.
+    if (rest.indexOf('--porcelain') !== -1) { if (hit) process.stdout.write(hit.name + '\n'); return; }
     if (hit) print('linked: ' + hit.name + '  (via ' + hit.dir + ')');
     else print('this directory is not linked — link it with: keyflip link <name>');
     return;
@@ -492,6 +512,192 @@ function cmdLink(ctx, rest) {
   if (!name) return fail("no such account: '" + arg + "'");
   links.set(ctx, process.cwd(), name);
   print(style.ok('✅') + ' linked ' + process.cwd() + ' → ' + name + "  (used by 'keyflip run' here)");
+}
+
+// Account groups/tags: scope rotation/failover to a pool.
+//   keyflip group [list] | members <g> | tag <account> <g...> | untag <account> <g>
+function cmdGroup(ctx, rest) {
+  const groups = require('./groups');
+  const sub = rest[0];
+  const args = rest.slice(1);
+  switch (sub) {
+    case undefined: case 'list': {
+      const g = groups.listGroups(ctx);
+      const names = Object.keys(g).sort();
+      if (JSON_MODE) { jsonOut({ groups: g }); return; }
+      if (!names.length) { print('no groups yet — tag an account: keyflip group tag <account> <group>'); return; }
+      names.forEach(function (name) { print(style.bold(name) + '  ' + g[name].join(', ')); });
+      return;
+    }
+    case 'members': {
+      const grp = args[0];
+      if (!grp) return fail('usage: keyflip group members <group>');
+      const m = groups.membersOf(ctx, grp);
+      if (JSON_MODE) { jsonOut({ group: grp, members: m }); return; }
+      if (!m.length) print('no accounts in group: ' + grp); else m.forEach(function (n) { print(n); });
+      return;
+    }
+    case 'tag': {
+      const acct = args[0];
+      const tags = args.slice(1).filter(function (a) { return a.indexOf('-') !== 0; });
+      if (!acct || !tags.length) return fail('usage: keyflip group tag <account> <group...>');
+      const name = core.resolveProfile(ctx, acct);
+      if (!name) return fail("no such account: '" + acct + "'");
+      let cur = groups.tagsFor(ctx, name);
+      try { tags.forEach(function (t) { cur = groups.addTag(ctx, name, t); }); } catch (e) { return fail(e.message); }
+      if (JSON_MODE) { jsonOut({ account: name, tags: cur }); return; }
+      print(style.ok('✅') + ' ' + name + ' → ' + cur.join(', '));
+      return;
+    }
+    case 'untag': {
+      const acct = args[0], grp = args[1];
+      if (!acct || !grp) return fail('usage: keyflip group untag <account> <group>');
+      const name = core.resolveProfile(ctx, acct);
+      if (!name) return fail("no such account: '" + acct + "'");
+      let cur; try { cur = groups.removeTag(ctx, name, grp); } catch (e) { return fail(e.message); }
+      if (JSON_MODE) { jsonOut({ account: name, tags: cur }); return; }
+      print(style.ok('✅') + ' ' + name + (cur.length ? ' → ' + cur.join(', ') : ' (no groups)'));
+      return;
+    }
+    default:
+      return fail('unknown: keyflip group ' + sub + ' (use: list | members <g> | tag <account> <g...> | untag <account> <g>)');
+  }
+}
+
+// SPEND/QUOTA BUDGETS: per-account (or '*' default) usage ceilings + breach/near-breach alerts.
+// Reads the usage cache (populated by `keyflip list --usage`) — never fetches.
+function cmdBudget(ctx, rest) {
+  const budget = require('./budget');
+  const sub = rest[0] || 'status';
+  const args = rest.slice(1);
+  function fmtPct(v) { return v == null ? '?' : Math.round(v) + '%'; }
+  function fmtLimits(l) { const p = []; if (l && l.fiveHourPct != null) p.push('5h ' + l.fiveHourPct + '%'); if (l && l.sevenDayPct != null) p.push('7d ' + l.sevenDayPct + '%'); return p.length ? p.join(' · ') : '(none)'; }
+  function target(name) { return (name === '*' || name === 'default' || name === 'defaults') ? '*' : (core.resolveProfile(ctx, name) || name); }
+  function intFlag() { for (let i = 0; i < arguments.length; i++) { const j = args.indexOf(arguments[i]); if (j !== -1) return parseInt(args[j + 1], 10); } return undefined; }
+  switch (sub) {
+    case 'status': {
+      const s = budget.status(ctx);
+      if (JSON_MODE) { jsonOut({ budget: s }); return; }
+      if (s.defaults && (s.defaults.fiveHourPct != null || s.defaults.sevenDayPct != null)) print('defaults  ' + fmtLimits(s.defaults));
+      if (!s.accounts.length) { print('No account budgets set — add one:  keyflip budget set <account> --5h 80 --7d 90'); return; }
+      s.accounts.forEach(function (a) {
+        print(style.bold(a.name) + '  limits ' + fmtLimits(a.limits) + '  usage 5h ' + fmtPct(a.usage.fiveHour) + ' / 7d ' + fmtPct(a.usage.sevenDay));
+        a.alerts.forEach(function (al) { print('   ' + (al.breached ? style.err('BREACH') : style.warn('warn  ')) + '  ' + al.metric + '  ' + Math.round(al.pct) + '% vs limit ' + al.limit + '%'); });
+      });
+      return;
+    }
+    case 'set': {
+      const who = args.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+      if (!who) return fail('usage: keyflip budget set <account> --5h N --7d N   (account may be "*" for defaults)');
+      const five = intFlag('--5h', '--five-hour'), seven = intFlag('--7d', '--seven-day');
+      if (five === undefined && seven === undefined) return fail('give at least one ceiling: --5h N and/or --7d N');
+      const limits = {}; if (five !== undefined) limits.fiveHourPct = five; if (seven !== undefined) limits.sevenDayPct = seven;
+      const name = target(who);
+      let entry; try { entry = budget.setLimit(ctx, name, limits); } catch (e) { return fail(e.message); }
+      if (JSON_MODE) { jsonOut({ set: { account: name, limits: entry } }); return; }
+      print(style.ok('✅') + ' budget for ' + name + ': ' + fmtLimits(entry || {}));
+      return;
+    }
+    case 'clear': {
+      const who = args.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+      if (!who) return fail('usage: keyflip budget clear <account>   (account may be "*" for defaults)');
+      const name = target(who);
+      let existed; try { existed = budget.clear(ctx, name); } catch (e) { return fail(e.message); }
+      if (JSON_MODE) { jsonOut({ cleared: existed ? name : null }); return; }
+      print(existed ? '🗑  cleared budget for ' + name : 'no budget set for ' + name);
+      return;
+    }
+    default:
+      return fail('unknown: keyflip budget ' + sub + ' (use: status | set | clear)');
+  }
+}
+
+// keyflip import-env [<file>] [--dry-run] [--env] — import provider endpoints from a .env file
+// (default ./.env) or the process environment (--env). --dry-run lists candidates, keys REDACTED.
+async function cmdImportEnv(ctx, rest) {
+  const dry = rest.indexOf('--dry-run') !== -1;
+  const useEnv = rest.indexOf('--env') !== -1;
+  const file = rest.filter(function (a) { return a.indexOf('-') !== 0; })[0] || '.env';
+  let res;
+  try { res = useEnv ? importcreds.fromEnv(ctx, process.env) : importcreds.fromFile(ctx, file); } catch (e) { return fail(e.message); }
+  const cands = res.candidates;
+  if (!cands.length) { if (JSON_MODE) { jsonOut({ candidates: [] }); return; } print('No importable credentials found' + (useEnv ? ' in the environment.' : ' in ' + res.path + '.')); return; }
+  if (dry) {
+    const sum = importcreds.summarize(cands);
+    if (JSON_MODE) { jsonOut({ dryRun: true, candidates: sum }); return; }
+    print('Would import ' + cands.length + ' provider(s) (keys redacted):');
+    sum.forEach(function (s) { print('  ' + s.name + '  ' + s.baseUrl + '  [' + s.authScheme + ']  key=' + s.key); });
+    return;
+  }
+  const imported = [];
+  cands.forEach(function (c) { provider.add(ctx, c.name, { baseUrl: c.baseUrl, authScheme: c.authScheme, key: c.key }); logmod.log('import-env provider add ' + c.name); imported.push(importcreds.summarize([c])[0]); });
+  if (JSON_MODE) { jsonOut({ imported: imported }); return; }
+  print(style.ok('✅') + ' imported ' + imported.length + ' provider(s):');
+  imported.forEach(function (s) { print('  ' + s.name + '  ' + s.baseUrl + '  (key ' + s.key + ')'); });
+  print('Activate one with:  keyflip use <name>   (back to your subscription:  keyflip provider off)');
+}
+
+// Print the shell auto-activation hook (direnv-style for account pins). Clean stdout only.
+function cmdShellInit(rest) {
+  const shellhook = require('./shellhook');
+  const shell = rest.filter(function (a) { return a.indexOf('-') !== 0; })[0];
+  if (!shell) return fail('usage: keyflip shell-init <bash|zsh|fish>');
+  if (!shellhook.isSupported(shell)) return fail("unsupported shell: '" + shell + "' (supported: " + shellhook.supported().join(', ') + ')');
+  process.stdout.write(shellhook.hook(shell));
+}
+
+// keyflip log — VIEW the action/audit log (<configDir>/logs/keyflip.log).
+function cmdAuditLog(ctx, rest) {
+  const ti = rest.indexOf('--tail'); const limit = ti !== -1 ? (parseInt(rest[ti + 1], 10) || 50) : 50;
+  const gi = rest.indexOf('--grep'); const grep = gi !== -1 ? rest[gi + 1] : null;
+  const si = rest.indexOf('--since'); const since = si !== -1 ? rest[si + 1] : null;
+  const entries = auditview.tail(ctx, { limit: limit, grep: grep, since: since });
+  if (JSON_MODE) { jsonOut({ log: auditview.path(ctx), entries: entries }); return; }
+  if (!entries.length) { print('(no matching log entries — ' + auditview.path(ctx) + ')'); return; }
+  entries.forEach(function (e) { print(e.ts + '  ' + e.msg); });
+}
+
+// Notifications / webhooks on key events (quota / switch / fleet-reply).
+async function cmdNotify(ctx, rest) {
+  const notify = require('./notify');
+  const sub = rest[0];
+  const args = rest.slice(1);
+  if (sub === 'status' || sub === undefined) {
+    const cfg = notify.getConfig(ctx);
+    if (JSON_MODE) { jsonOut({ notify: cfg }); return; }
+    print('Notifications:');
+    print('  webhook: ' + (cfg.webhook || style.dim('(none)')));
+    print('  desktop: ' + (cfg.desktop ? ('on' + (ctx.platform === 'darwin' ? '' : style.dim(' (macOS only — inactive here)'))) : 'off'));
+    print('  events:  ' + (cfg.events.length ? cfg.events.join(', ') : style.dim('(none)')));
+    return;
+  }
+  if (sub === 'set') {
+    const patch = {};
+    const wi = args.indexOf('--webhook'); if (wi !== -1) patch.webhook = args[wi + 1] || null;
+    const ei = args.indexOf('--events'); if (ei !== -1) patch.events = String(args[ei + 1] || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (args.indexOf('--desktop') !== -1) patch.desktop = true;
+    if (args.indexOf('--no-desktop') !== -1) patch.desktop = false;
+    if (!Object.keys(patch).length) return fail('nothing to set (use --webhook URL | --events a,b,c | --desktop | --no-desktop)');
+    const cfg = notify.setConfig(ctx, patch);
+    if (patch.webhook && !cfg.webhook) print(style.warn('⚠ ') + 'webhook ignored — must be an http(s) URL');
+    if (JSON_MODE) { jsonOut({ notify: cfg }); return; }
+    print(style.ok('✅') + ' notifications updated.');
+    return cmdNotify(ctx, ['status']);
+  }
+  if (sub === 'off') {
+    const cfg = notify.setConfig(ctx, { webhook: null, desktop: false });
+    if (JSON_MODE) { jsonOut({ notify: cfg }); return; }
+    print(style.ok('✅') + ' notifications off (webhook cleared, desktop disabled).');
+    return;
+  }
+  if (sub === 'test') {
+    const r = await notify.test(ctx);
+    if (JSON_MODE) { jsonOut(r); return; }
+    if (r.sent) print(style.ok('✅') + ' test notification sent (' + r.channels.filter(function (c) { return c.ok; }).map(function (c) { return c.channel; }).join(', ') + ')');
+    else { print(style.err('✗') + ' not sent: ' + (r.reason || 'unknown') + (r.channels.length ? '  [' + r.channels.map(function (c) { return c.channel + ':' + (c.ok ? 'ok' : c.reason); }).join(', ') + ']' : '')); process.exitCode = 1; }
+    return;
+  }
+  return fail('usage: keyflip notify [status | set --webhook URL --events a,b,c [--desktop|--no-desktop] | test | off]');
 }
 
 // MCP server (stdio) so agents can inspect/switch accounts themselves.
@@ -3429,10 +3635,22 @@ async function dispatch(ctx, cmd, rest) {
         return withLock(ctx, function () { return cmdGateway(ctx, rest); }, 'claude-desktop');
       case 'sync':
         return cmdSync(ctx, rest);
+      case 'group': case 'groups':
+        return (rest[0] === 'tag' || rest[0] === 'untag') ? withLock(ctx, function () { return cmdGroup(ctx, rest); }) : cmdGroup(ctx, rest);
+      case 'budget':
+        return (rest[0] === 'set' || rest[0] === 'clear') ? withLock(ctx, function () { return cmdBudget(ctx, rest); }) : cmdBudget(ctx, rest);
+      case 'import-env':
+        return withLock(ctx, function () { return cmdImportEnv(ctx, rest); });
+      case 'shell-init':
+        return cmdShellInit(rest);
+      case 'notify':
+        return (rest[0] === 'set' || rest[0] === 'off') ? withLock(ctx, function () { return cmdNotify(ctx, rest); }) : cmdNotify(ctx, rest);
       case 'versioning':
         return cmdVersion(ctx, rest);
-      case 'history': case 'log':
+      case 'history':
         return cmdHistory(ctx, rest);
+      case 'log': case 'auditlog':
+        return cmdAuditLog(ctx, rest);
       case 'undo':
         return withLock(ctx, function () { return cmdUndo(ctx); }, 'undo');
       case 'restore':

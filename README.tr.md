@@ -129,6 +129,12 @@ keyflip status                # her yüzey hangi hesapta (CLI + masaüstü uygul
 keyflip list [--usage]        # hesaplar; --usage her hesabın 5s/7g kullanımını ekler
 keyflip autoswitch            # kullanımı izle; eşikte CLI hesabını otomatik değiştir
 keyflip link [ad|--remove]    # bu dizin ağacını `run` için bir hesaba eşle
+keyflip shell-init <bash|zsh|fish>   # `cd` ile sabitlenmiş hesabı otomatik etkinleştiren shell hook'u yazdır (eval "$(keyflip shell-init zsh)")
+keyflip group [list|tag <hesap> <g…>|untag <hesap> <g>|members <g>]   # hesapları havuzlara etiketle; `next --group <g>` havuz içinde döner
+keyflip budget [status|set <hesap> --5h N --7d N|clear <hesap>]   # kullanım-% tavanları + aşım/yaklaşım uyarıları (usage cache okur)
+keyflip notify [status|set --webhook URL --events a,b,c|test|off]   # kota/switch/fleet-reply olaylarında bildirim (webhook + macOS banner)
+keyflip import-env [<dosya>] [--dry-run] [--env]   # provider endpoint'lerini .env dosyasından / ortamdan içe aktar (anahtarlar asla yazılmaz)
+keyflip log [--tail N] [--grep S] [--since ISO]   # eylem/denetim log'unu görüntüle
 keyflip run <ad> [-- argümanlar]  # PARALEL oturum: o hesap YALNIZCA bu terminalde
 keyflip add <ad> --token <dosya|->   # ham kimlik bilgisini headless içe aktar
 keyflip mcp [--setup]         # agent'lar için stdio üzerinden MCP sunucusu

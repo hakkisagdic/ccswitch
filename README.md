@@ -129,6 +129,12 @@ keyflip status                # which account each surface is on (CLI + desktop 
 keyflip list [--usage]        # accounts; --usage adds each one's 5h/7d utilization
 keyflip autoswitch            # watch usage; auto-swap the CLI account at a threshold
 keyflip link [name|--remove]  # map this directory tree to an account for `run`
+keyflip shell-init <bash|zsh|fish>   # print a shell hook so `cd` auto-activates the pinned account (eval "$(keyflip shell-init zsh)")
+keyflip group [list|tag <acct> <g…>|untag <acct> <g>|members <g>]   # tag accounts into pools; `next --group <g>` rotates within one
+keyflip budget [status|set <acct> --5h N --7d N|clear <acct>]   # usage-% ceilings + breach/near-breach alerts (reads the usage cache)
+keyflip notify [status|set --webhook URL --events a,b,c|test|off]   # push alerts on quota/switch/fleet-reply (webhook + macOS banner)
+keyflip import-env [<file>] [--dry-run] [--env]   # import provider endpoints from a .env file / the environment (keys never printed)
+keyflip log [--tail N] [--grep S] [--since ISO]   # view the action/audit log
 keyflip run <name> [-- args]  # PARALLEL session: that account in THIS terminal only
 keyflip add <name> --token <file|->   # headless import of a raw credential
 keyflip mcp [--setup]         # MCP server over stdio so agents can drive keyflip
