@@ -1040,9 +1040,15 @@ ones were fixed this session:
   `mcp --setup` prints the live tool count; new verbs in help; stale Windows/Copilot/roadmap notes
   corrected.
 
+**MCP parity — ✅ DONE (2026-07-07):** the remaining CLI-only commands now ship MCP tools (77 total,
+0 confirm-invariant violations): `keyflip_gateway_status/use/off`, `keyflip_mcpreg_list/set/enable/remove`,
+`keyflip_speedtest` (read-only rank, `noPersist`), `keyflip_share`/`_share_apply`,
+`keyflip_sync_test/push/pull`, `keyflip_links`/`_link`, `keyflip_transfer_pull`, `keyflip_autoswitch_tick`
+(locks only the switch, mirroring the CLI). Secrets via `*_file` paths. +tests, bilingual docs. Only
+long-lived interactive listeners (`transfer serve`, the TUI `menu`/`panel`, `onboard`, `setup`) stay
+CLI-only by design.
+
 **Remaining backlog (tracked, not yet built):**
-- **MCP parity (P2/S–M):** `gateway`, `mcpreg`, `sync`, `share`, `speedtest`, `transfer` (LAN),
-  `autoswitch`, `link` have no MCP tool yet (some are legitimately CLI-only interactive/destructive).
 - **Domain features (P2/M–L):** account groups/tags (scoped `next` rotation), spend/quota budgeting +
   alerts, import from `.env`/password managers, team/shared credential pool, shell auto-activation of
   a directory pin, biometric/session-TTL unlock.

@@ -625,6 +625,116 @@ const TOOLS = [
       return { removed: String(args.name) };
     },
   },
+
+  // ---- CLI<->MCP parity tools (2026-07-07 audit): gateway / mcpreg / speedtest / share / sync / link / transfer ----
+  {
+    name: 'keyflip_gateway_status', title: 'Is the Claude DESKTOP app routed through a provider?',
+    description: 'Report whether the Claude DESKTOP app is currently pointed at a third-party gateway/provider vs first-party Anthropic. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { const g = require('./desktopgw').active(ctx); return { gateway: g ? g.provider : null, firstParty: !g }; },
+  },
+  {
+    name: 'keyflip_gateway_use', title: 'Route the Claude desktop app through a provider',
+    description: 'Point the Claude DESKTOP app at a saved provider (gateway); takes effect after the app restarts. Mutating (rewrites the desktop app config) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { provider: { type: 'string' }, confirm: confirmProp.confirm }, required: ['provider', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); if (!provider.exists(ctx, String(args.provider))) throw new Error("no such provider: '" + args.provider + "'"); const l = await lock.acquire(ctx.configDir); let r; try { r = require('./desktopgw').use(ctx, String(args.provider)); } finally { l.release(); } return { gateway: String(args.provider), dirs: r.dirs, note: 'restart the desktop app to apply' }; },
+  },
+  {
+    name: 'keyflip_gateway_off', title: 'Restore the Claude desktop app to first-party',
+    description: 'Restore the Claude DESKTOP app to first-party (Anthropic), undoing a gateway; takes effect after the app restarts. Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const l = await lock.acquire(ctx.configDir); try { require('./desktopgw').restore(ctx); } finally { l.release(); } return { restored: true, note: 'restart the desktop app to apply' }; },
+  },
+  {
+    name: 'keyflip_mcpreg_list', title: 'List registered third-party MCP servers',
+    description: 'List the MCP servers keyflip has registered (that it can enable/disable in Claude Code / Desktop configs). Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return { servers: require('./mcpreg').list(ctx) }; },
+  },
+  {
+    name: 'keyflip_mcpreg_set', title: 'Register/update a third-party MCP server',
+    description: 'Register (or update) a named MCP server definition (command + args + env) in keyflip\'s registry so it can be enabled on Claude Code / Desktop. Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } }, env: { type: 'object', additionalProperties: { type: 'string' } }, confirm: confirmProp.confirm }, required: ['name', 'command', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const l = await lock.acquire(ctx.configDir); let e; try { e = require('./mcpreg').add(ctx, String(args.name), { command: String(args.command), args: args.args || [], env: args.env || {} }); } finally { l.release(); } return { registered: String(args.name), entry: e }; },
+  },
+  {
+    name: 'keyflip_mcpreg_enable', title: 'Enable/disable a registered MCP server on a surface',
+    description: 'Enable or disable a registered MCP server on a surface — "claude-code" or "claude-desktop". Mutating (writes the target app config) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, surface: { type: 'string', enum: ['claude-code', 'claude-desktop'] }, enabled: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['name', 'surface', 'enabled', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const l = await lock.acquire(ctx.configDir); let r; try { r = require('./mcpreg').setEnabled(ctx, String(args.name), String(args.surface), !!args.enabled); } finally { l.release(); } return { name: String(args.name), surface: String(args.surface), enabled: !!args.enabled, result: r }; },
+  },
+  {
+    name: 'keyflip_mcpreg_remove', title: 'Remove a registered MCP server',
+    description: 'Remove a registered MCP server from keyflip\'s registry and unhook it from both surfaces. Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, confirm: confirmProp.confirm }, required: ['name', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const l = await lock.acquire(ctx.configDir); try { require('./mcpreg').remove(ctx, String(args.name)); } finally { l.release(); } return { removed: String(args.name) }; },
+  },
+  {
+    name: 'keyflip_speedtest', title: 'Rank a provider\'s endpoints by latency (read-only)',
+    description: 'Measure and RANK a provider\'s candidate endpoints by latency WITHOUT changing anything (read-only diagnostic; does NOT switch the active baseUrl — run `keyflip speedtest` on the CLI to also apply the fastest). Returns per-endpoint ms + the fastest URL.',
+    inputSchema: { type: 'object', properties: { provider: { type: 'string' } }, required: ['provider'], additionalProperties: false }, annotations: RO_NET,
+    run: async function (ctx, args) { const r = await provider.speedtest(ctx, String(args.provider), { noPersist: true }); return { results: r.results, fastest: r.fastest }; },
+  },
+  {
+    name: 'keyflip_share', title: 'Build a keyflip:// share link',
+    description: 'Build a keyflip:// import link for a saved provider or account. For a provider, no_secrets=true omits the API key (pointer only); account links are ALWAYS pointer-only (never carry the OAuth token). Read-only (builds a string).',
+    inputSchema: { type: 'object', properties: { resource: { type: 'string', enum: ['provider', 'account'] }, name: { type: 'string' }, no_secrets: { type: 'boolean' } }, required: ['resource', 'name'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { return { url: require('./share').build(ctx, String(args.resource), String(args.name), { noSecrets: !!args.no_secrets }) }; },
+  },
+  {
+    name: 'keyflip_share_apply', title: 'Import from a keyflip:// share link',
+    description: 'Parse and APPLY a keyflip:// import link (saves the provider, or creates a pointer-only account). Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string' }, confirm: confirmProp.confirm }, required: ['url', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const share = require('./share'); const parsed = share.parse(String(args.url)); const l = await lock.acquire(ctx.configDir); let r; try { r = share.apply(ctx, parsed); } finally { l.release(); } return { imported: r }; },
+  },
+  {
+    name: 'keyflip_sync_test', title: 'Test a WebDAV sync endpoint',
+    description: 'Check that a WebDAV URL is reachable for encrypted account sync. Read-only network probe. pass_file (optional) is a FILE holding the WebDAV password — never pass secrets inline.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string' }, user: { type: 'string' }, pass_file: { type: 'string' } }, required: ['url'], additionalProperties: false }, annotations: RO_NET,
+    run: async function (ctx, args) { const pass = args.pass_file ? fs.readFileSync(String(args.pass_file), 'utf8').trim() : null; return await sync.test({ url: String(args.url), user: args.user || null, pass: pass }); },
+  },
+  {
+    name: 'keyflip_sync_push', title: 'Push encrypted accounts to WebDAV',
+    description: 'Encrypt this machine\'s accounts (passphrase from passphrase_file) and PUT them to a WebDAV URL. Secrets are only ever read from files, never argv. Mutating (writes to the remote) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string' }, passphrase_file: { type: 'string' }, user: { type: 'string' }, pass_file: { type: 'string' }, confirm: confirmProp.confirm }, required: ['url', 'passphrase_file', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const o = { url: String(args.url), user: args.user || null, pass: args.pass_file ? fs.readFileSync(String(args.pass_file), 'utf8').trim() : null, passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() }; return await sync.push(ctx, o); },
+  },
+  {
+    name: 'keyflip_sync_pull', title: 'Pull + merge encrypted accounts from WebDAV',
+    description: 'GET the encrypted snapshot from a WebDAV URL, decrypt it (passphrase_file), and MERGE locally (a safety backup of current credentials is written first; existing accounts kept unless force=true). Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string' }, passphrase_file: { type: 'string' }, user: { type: 'string' }, pass_file: { type: 'string' }, force: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['url', 'passphrase_file', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const o = { url: String(args.url), user: args.user || null, pass: args.pass_file ? fs.readFileSync(String(args.pass_file), 'utf8').trim() : null, passphrase: fs.readFileSync(String(args.passphrase_file), 'utf8').trim() }; const p = await sync.pull(ctx, o); if (!p.found) throw new Error('no snapshot at that URL'); const l = await lock.acquire(ctx.configDir); let res; try { res = sync.apply(ctx, p, { force: !!args.force }); } finally { l.release(); } return { remote: p.meta, applied: res }; },
+  },
+  {
+    name: 'keyflip_links', title: 'List directory→account pins',
+    description: 'List the directory→account pins (used by `keyflip run` to auto-select an account per directory). Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { return { links: require('./links').readAll(ctx) }; },
+  },
+  {
+    name: 'keyflip_link', title: 'Pin a directory to an account',
+    description: 'Pin a directory (absolute path) to a saved account so `keyflip run` there uses it. Set remove=true to unpin (account not needed then). Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { dir: { type: 'string' }, account: { type: 'string' }, remove: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['dir', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const links = require('./links'); const dir = String(args.dir); const l = await lock.acquire(ctx.configDir); try { if (args.remove) { return { unlinked: links.remove(ctx, dir) ? dir : null }; } const name = core.resolveProfile(ctx, String(args.account || '')); if (!name) throw new Error("no such account: '" + args.account + "'"); links.set(ctx, dir, name); return { linked: { dir: dir, account: name } }; } finally { l.release(); } },
+  },
+  {
+    name: 'keyflip_transfer_pull', title: 'Pull + merge a bundle from a LAN peer',
+    description: 'Pull the full bundle (accounts + providers + transcripts + memory) from a machine running `keyflip transfer serve`, using its one-time code, and MERGE it (existing entries kept unless force=true). host is "<host:port>" shown on the serving machine. Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { host: { type: 'string' }, code: { type: 'string' }, force: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['host', 'code', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); const bundle = await require('./lantransfer').pull({ host: String(args.host), code: String(args.code) }); const l = await lock.acquire(ctx.configDir); let res; try { res = require('./migrate').applyBundle(ctx, bundle, { force: !!args.force }); } finally { l.release(); } return { merged: { accounts: res.accounts, providers: res.providers, transcripts: res.transcripts } }; },
+  },
+  {
+    name: 'keyflip_autoswitch_tick', title: 'Evaluate usage once and auto-switch if over threshold',
+    description: 'Run ONE autoswitch evaluation: check the active account\'s usage headroom and, if it is at/over the threshold, switch the CLI to the next available account. Returns the decision (state / headroom / switchedTo). Mutating (MAY switch the active account) — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { threshold: { type: 'number', description: 'Utilization % at which to switch (default 90).' }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) {
+      needConfirm(args);
+      // Mirror the CLI: lock ONLY the switch, not the (network) usage evaluation.
+      const opts = { performSwitch: function (name) { return (async function () { const l = await lock.acquire(ctx.configDir); try { return core.performSwitch(ctx, name); } finally { l.release(); } })(); } };
+      if (args.threshold !== undefined) opts.threshold = args.threshold;
+      return await require('./autoswitch').tick(ctx, opts);
+    },
+  },
   {
     name: 'keyflip_agents', title: 'List other agents\' memory + config keyflip can carry',
     description: 'Report which OTHER AI agents have files on THIS machine that keyflip can carry across machines: MEMORY (Cursor `~/.cursor/rules/`, Gemini `~/.gemini/GEMINI.md`, Codex `~/.codex/AGENTS.md`+`memories/` — markdown, no secrets) and CONFIG (`~/.cursor/mcp.json`, `~/.gemini/settings.json`, `~/.codex/config.toml` — carried ONLY secret-scanned + redacted). Read-only; feed into keyflip_migrate_export with agents=true and/or agent_config=true.',

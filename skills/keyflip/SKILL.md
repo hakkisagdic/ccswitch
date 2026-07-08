@@ -246,6 +246,16 @@ account; `keyflip provider off` restores it. Never put an API key in argv — us
 - `keyflip gateway use <provider>` — route the Claude **desktop app** through a
   provider gateway (restart the app to apply).
 
+**These all have MCP tools too** (2026-07 parity pass) — an agent can do everything the CLI can:
+`keyflip_gateway_status` / `keyflip_gateway_use` / `keyflip_gateway_off`; `keyflip_mcpreg_list` /
+`keyflip_mcpreg_set` / `keyflip_mcpreg_enable` / `keyflip_mcpreg_remove`; `keyflip_speedtest` (RANK
+a provider's endpoints, read-only — does not change the active URL); `keyflip_share` /
+`keyflip_share_apply` (build/import `keyflip://` links); `keyflip_sync_test` / `keyflip_sync_push` /
+`keyflip_sync_pull` (encrypted WebDAV account sync); `keyflip_links` / `keyflip_link` (directory→account
+pins); `keyflip_transfer_pull` (pull+merge a bundle from a LAN peer running `transfer serve`); and
+`keyflip_autoswitch_tick` (one usage-check that may switch at the threshold). Every mutating one needs
+`confirm:true`; secrets (WebDAV/passphrase) are passed as `*_file` paths, never inline.
+
 ## Finding & resuming past conversations
 
 Transcripts live in `~/.claude/projects` and are account-independent.

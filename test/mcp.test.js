@@ -256,3 +256,46 @@ test('keyflip_settings redacts credential env on show/get (never leaks a key to 
   const gotOk = await tool.run(ctx, { action: 'get', key: 'env.ANTHROPIC_MODEL' });
   assert.strictEqual(gotOk.value, 'opus', 'a non-secret get is returned verbatim');
 });
+
+// ---- 2026-07-07 CLI<->MCP parity tools ----
+const { makeCtx } = require('./helpers');
+function toolByName(n) { return require('../src/mcp').TOOLS.find(function (t) { return t.name === n; }); }
+
+test('parity MCP: gateway_status reports first-party when no gateway is set', async function () {
+  const r = await toolByName('keyflip_gateway_status').run(makeCtx());
+  assert.strictEqual(r.firstParty, true);
+  assert.strictEqual(r.gateway, null);
+});
+
+test('parity MCP: mcpreg set/list/remove round-trips (and gates on confirm)', async function () {
+  const ctx = makeCtx();
+  await assert.rejects(function () { return toolByName('keyflip_mcpreg_set').run(ctx, { name: 'ctx7', command: 'npx' }); }, /confirmation required/);
+  await toolByName('keyflip_mcpreg_set').run(ctx, { name: 'ctx7', command: 'npx', args: ['-y', 'ctx7'], confirm: true });
+  assert.ok(JSON.stringify((await toolByName('keyflip_mcpreg_list').run(ctx)).servers).indexOf('ctx7') !== -1);
+  await toolByName('keyflip_mcpreg_remove').run(ctx, { name: 'ctx7', confirm: true });
+  assert.strictEqual(JSON.stringify((await toolByName('keyflip_mcpreg_list').run(ctx)).servers).indexOf('ctx7'), -1);
+});
+
+test('parity MCP: link/links pin and list a directory→account', async function () {
+  const ctx = makeCtx();
+  const profiles = require('../src/profiles');
+  ctx.store.setProfile('work', '{"t":1}');
+  profiles.write(ctx.configDir, { name: 'work', email: 'w@x.com', oauthAccount: {}, savedAt: ctx.now() });
+  await assert.rejects(function () { return toolByName('keyflip_link').run(ctx, { dir: '/tmp/proj', account: 'work' }); }, /confirmation required/);
+  const r = await toolByName('keyflip_link').run(ctx, { dir: '/tmp/proj', account: 'work', confirm: true });
+  assert.strictEqual(r.linked.account, 'work');
+  assert.ok(JSON.stringify((await toolByName('keyflip_links').run(ctx)).links).indexOf('work') !== -1);
+});
+
+test('parity MCP: share builds a pointer link and share_apply imports the provider', async function () {
+  const provider = require('../src/provider');
+  const ctxA = makeCtx();
+  provider.add(ctxA, 'relay', { baseUrl: 'https://api.example.com', authScheme: 'bearer', models: {}, endpointCandidates: [] });
+  const built = await toolByName('keyflip_share').run(ctxA, { resource: 'provider', name: 'relay', no_secrets: true });
+  assert.match(built.url, /^keyflip:\/\/v1\/import\?/);
+  const ctxB = makeCtx();
+  await assert.rejects(function () { return toolByName('keyflip_share_apply').run(ctxB, { url: built.url }); }, /confirmation required/);
+  const r = await toolByName('keyflip_share_apply').run(ctxB, { url: built.url, confirm: true });
+  assert.strictEqual(r.imported.name, 'relay');
+  assert.ok(provider.exists(ctxB, 'relay'));
+});

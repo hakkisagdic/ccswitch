@@ -297,13 +297,15 @@ Agents shouldn't have to guess the CLI — keyflip speaks **MCP**:
 claude mcp add keyflip -- keyflip mcp     # or see: keyflip mcp --setup
 ```
 
-**The full CLI surface is exposed as 50+ MCP tools**, so an agent can do
-everything without shelling out — accounts (`keyflip_status/list/switch/next`),
-providers (`keyflip_providers`, `keyflip_provider_use/add`, `keyflip_test_provider`),
-sessions (`keyflip_sessions`, `keyflip_resume_command`), diagnostics
-(`keyflip_doctor`, `keyflip_usage_history`), backups, skills (`keyflip_skills`,
-`keyflip_skill_add/remove`), and the failover proxy (`keyflip_proxy_status`,
-`keyflip_proxy_control`). Every tool has a proper JSON Schema and read-only/
+**The full CLI surface is exposed as 75+ MCP tools**, so an agent can do
+everything without shelling out — accounts (`keyflip_status/list/switch/next/add/account_remove`),
+providers (`keyflip_providers`, `keyflip_provider_use/add/remove`, `keyflip_test_provider`,
+`keyflip_speedtest`), the **fleet** control plane (`keyflip_fleet_status/switch/send_account/collect/keys/trust`),
+sessions (`keyflip_sessions`, `keyflip_resume_command`, archive/distill/compact), migrate + LAN
+(`keyflip_migrate_*`, `keyflip_transfer_pull`), WebDAV sync (`keyflip_sync_test/push/pull`),
+`keyflip://` links (`keyflip_share/share_apply`), desktop gateway (`keyflip_gateway_*`), MCP-server
+registry (`keyflip_mcpreg_*`), directory pins (`keyflip_link/links`), diagnostics
+(`keyflip_doctor`, `keyflip_usage_history`), backups, skills, and the failover proxy. Every tool has a proper JSON Schema and read-only/
 destructive annotations; **mutating tools require `confirm: true`** and their
 descriptions tell the agent to ask the user first. Secrets are never accepted
 through MCP — e.g. adding a provider key is deferred to `--key-file` on the CLI.

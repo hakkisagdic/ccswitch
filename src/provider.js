@@ -157,18 +157,20 @@ async function speedtest(ctx, name, opts) {
     results.push({ url: url, ms: ms, ok: ok, bucket: ms == null ? 'unreachable' : (ms < 500 ? 'good' : (ms < 1000 ? 'fair' : 'slow')) });
   }
   const reachable = results.filter(function (r) { return r.ok; }).sort(function (a, b) { return a.ms - b.ms; });
-  let chosen = null;
-  if (reachable.length && reachable[0].url !== meta.baseUrl) {
-    meta.baseUrl = reachable[0].url;
+  const fastest = reachable.length ? reachable[0].url : null;
+  let chosen = null, persisted = false;
+  // opts.noPersist = rank only, never mutate meta.baseUrl (the read-only MCP diagnostic uses this).
+  if (reachable.length && fastest !== meta.baseUrl && !opts.noPersist) {
+    meta.baseUrl = fastest;
     writeJsonStable(metaPath(ctx, name), meta, 0o600);
-    chosen = reachable[0].url;
+    chosen = fastest; persisted = true;
     // if this provider is active, re-apply so the new base_url takes effect
     const active = readActive(ctx);
     if (active && active.name === name) use(ctx, name);
   } else if (reachable.length) {
-    chosen = reachable[0].url;
+    chosen = fastest;
   }
-  return { results: results, chosen: chosen };
+  return { results: results, chosen: chosen, fastest: fastest, persisted: persisted };
 }
 
 module.exports = {

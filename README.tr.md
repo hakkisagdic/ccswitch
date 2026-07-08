@@ -294,13 +294,15 @@ Agent'lar CLI'ı tahmin etmek zorunda kalmasın — keyflip **MCP** konuşur:
 claude mcp add keyflip -- keyflip mcp     # veya: keyflip mcp --setup
 ```
 
-**Tüm CLI yüzeyi 50+ MCP aracı olarak sunulur** — agent hiçbir şeyi kabuğa
-dökmeden yapabilir: hesaplar (`keyflip_status/list/switch/next`), provider'lar
-(`keyflip_providers`, `keyflip_provider_use/add`, `keyflip_test_provider`),
-oturumlar (`keyflip_sessions`, `keyflip_resume_command`), tanılama
-(`keyflip_doctor`, `keyflip_usage_history`), yedekler, skill'ler
-(`keyflip_skills`, `keyflip_skill_add/remove`) ve failover proxy
-(`keyflip_proxy_status/control`). Her aracın düzgün JSON Şeması ve
+**Tüm CLI yüzeyi 75+ MCP aracı olarak sunulur** — agent hiçbir şeyi kabuğa
+dökmeden yapabilir: hesaplar (`keyflip_status/list/switch/next/add/account_remove`), provider'lar
+(`keyflip_providers`, `keyflip_provider_use/add/remove`, `keyflip_test_provider`, `keyflip_speedtest`),
+**filo** kontrol düzlemi (`keyflip_fleet_status/switch/send_account/collect/keys/trust`),
+oturumlar (`keyflip_sessions`, `keyflip_resume_command`, archive/distill/compact), migrate + LAN
+(`keyflip_migrate_*`, `keyflip_transfer_pull`), WebDAV sync (`keyflip_sync_test/push/pull`),
+`keyflip://` linkleri (`keyflip_share/share_apply`), masaüstü gateway (`keyflip_gateway_*`), MCP-sunucu
+kaydı (`keyflip_mcpreg_*`), dizin pin'leri (`keyflip_link/links`), tanılama
+(`keyflip_doctor`, `keyflip_usage_history`), yedekler, skill'ler ve failover proxy. Her aracın düzgün JSON Şeması ve
 salt-okunur/yıkıcı anotasyonu var; **değiştiren araçlar `confirm: true` ister**
 ve açıklamaları agent'a önce kullanıcıya sormasını söyler. Sırlar MCP üzerinden
 asla alınmaz — ör. provider anahtarı ekleme CLI'daki `--key-file`'a bırakılır.

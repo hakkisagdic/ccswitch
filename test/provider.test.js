@@ -91,6 +91,18 @@ test('speedtest picks the fastest reachable endpoint and updates base_url', asyn
   assert.strictEqual(provider.read(ctx, 'multi').baseUrl, 'https://fast/v1');
 });
 
+test('speedtest noPersist ranks without mutating base_url (read-only MCP diagnostic)', async function () {
+  const ctx = ctxWithSettings();
+  provider.add(ctx, 'multi', { baseUrl: 'https://slow/v1', endpointCandidates: ['https://slow/v1', 'https://fast/v1'] });
+  let t = 0;
+  const clock = function () { return t; };
+  const fetchMock = async function (url) { t += url.indexOf('fast') !== -1 ? 100 : 900; return { ok: true, status: 200 }; };
+  const r = await provider.speedtest(ctx, 'multi', { fetch: fetchMock, clock: clock, noPersist: true });
+  assert.strictEqual(r.fastest, 'https://fast/v1', 'still reports the fastest');
+  assert.strictEqual(r.persisted, false);
+  assert.strictEqual(provider.read(ctx, 'multi').baseUrl, 'https://slow/v1', 'base_url is NOT changed');
+});
+
 // ---- spawned CLI ----
 test('CLI: provider add (key via stdin) -> use -> status -> off', function () {
   const BIN = path.join(__dirname, '..', 'bin', 'keyflip.js');
