@@ -748,13 +748,13 @@ const TOOLS = [
     name: 'keyflip_group_tag', title: 'Tag an account into a group',
     description: 'Add one or more group tags to an account so group-scoped rotation (`keyflip next --group <g>`) and failover can target it. Mutating — ask the user first, then confirm=true.',
     inputSchema: { type: 'object', properties: { account: { type: 'string' }, groups: { type: 'array', items: { type: 'string' } }, confirm: confirmProp.confirm }, required: ['account', 'groups', 'confirm'], additionalProperties: false }, annotations: MUT,
-    run: async function (ctx, args) { needConfirm(args); const g = require('./groups'); const name = core.resolveProfile(ctx, String(args.account)); if (!name) throw new Error("no such account: '" + args.account + "'"); const tags = Array.isArray(args.groups) ? args.groups : []; if (!tags.length) throw new Error('provide at least one group'); let cur = g.tagsFor(ctx, name); tags.forEach(function (t) { cur = g.addTag(ctx, name, String(t)); }); return { account: name, tags: cur }; },
+    run: async function (ctx, args) { needConfirm(args); const g = require('./groups'); const name = core.resolveProfile(ctx, String(args.account)); if (!name) throw new Error("no such account: '" + args.account + "'"); const tags = Array.isArray(args.groups) ? args.groups : []; if (!tags.length) throw new Error('provide at least one group'); const l = await lock.acquire(ctx.configDir); try { let cur = g.tagsFor(ctx, name); tags.forEach(function (t) { cur = g.addTag(ctx, name, String(t)); }); return { account: name, tags: cur }; } finally { l.release(); } },
   },
   {
     name: 'keyflip_group_untag', title: 'Remove an account from a group',
     description: 'Remove a group tag from an account. Mutating — ask the user first, then confirm=true.',
     inputSchema: { type: 'object', properties: { account: { type: 'string' }, group: { type: 'string' }, confirm: confirmProp.confirm }, required: ['account', 'group', 'confirm'], additionalProperties: false }, annotations: MUT,
-    run: async function (ctx, args) { needConfirm(args); const g = require('./groups'); const name = core.resolveProfile(ctx, String(args.account)); if (!name) throw new Error("no such account: '" + args.account + "'"); return { account: name, tags: g.removeTag(ctx, name, String(args.group)) }; },
+    run: async function (ctx, args) { needConfirm(args); const g = require('./groups'); const name = core.resolveProfile(ctx, String(args.account)); if (!name) throw new Error("no such account: '" + args.account + "'"); const l = await lock.acquire(ctx.configDir); try { return { account: name, tags: g.removeTag(ctx, name, String(args.group)) }; } finally { l.release(); } },
   },
   {
     name: 'keyflip_budget_status', title: 'Usage budgets + breach alerts',
@@ -802,7 +802,7 @@ const TOOLS = [
     name: 'keyflip_notify_set', title: 'Configure notifications',
     description: 'Set the notification webhook (http(s) only), the enabled event list, and/or the macOS desktop-banner toggle. keyflip POSTs a NON-SECRET summary { event, payload, at } on each enabled event. Pass webhook:null to clear it. Mutating — ask the user, then confirm=true.',
     inputSchema: { type: 'object', properties: { webhook: { type: ['string', 'null'] }, events: { type: 'array', items: { type: 'string' } }, desktop: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['confirm'], additionalProperties: false }, annotations: MUT,
-    run: async function (ctx, args) { needConfirm(args); const patch = {}; if ('webhook' in args) patch.webhook = args.webhook == null ? null : String(args.webhook); if (Array.isArray(args.events)) patch.events = args.events; if (typeof args.desktop === 'boolean') patch.desktop = args.desktop; return { notify: require('./notify').setConfig(ctx, patch) }; },
+    run: async function (ctx, args) { needConfirm(args); const patch = {}; if ('webhook' in args) patch.webhook = args.webhook == null ? null : String(args.webhook); if (Array.isArray(args.events)) patch.events = args.events; if (typeof args.desktop === 'boolean') patch.desktop = args.desktop; const l = await lock.acquire(ctx.configDir); try { return { notify: require('./notify').setConfig(ctx, patch) }; } finally { l.release(); } },
   },
   {
     name: 'keyflip_notify_test', title: 'Send a test notification',

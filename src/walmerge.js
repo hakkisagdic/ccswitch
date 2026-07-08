@@ -92,8 +92,13 @@ function applyOverlay(dbBuf, walBuf) {
     ps = rec.pageSize;
     const keys = Object.keys(rec.pages);
     if (!keys.length || !ps) return dbBuf;
-    let maxPage = rec.size;
-    keys.forEach(function (k) { const n = +k; if (n > maxPage) maxPage = n; });
+    // SECURITY: `rec.size` (commit frame's db-size) and the page numbers are attacker-controlled u32s
+    // inside a self-checksummed WAL. Never grow the output beyond what the DB+WAL bytes could really
+    // hold — otherwise a ~4KB planted -wal declaring page 250000 forces a ~GB Buffer.alloc (DoS via the
+    // no-confirm `keyflip foreign`). Cap to the physical input size; over-cap pages are simply dropped.
+    const cap = Math.ceil((dbBuf.length + (Buffer.isBuffer(walBuf) ? walBuf.length : 0)) / ps) + 8;
+    let maxPage = Math.min(rec.size, cap);
+    keys.forEach(function (k) { const n = +k; if (n > maxPage && n <= cap) maxPage = n; });
     const totalPages = Math.max(Math.ceil(dbBuf.length / ps), maxPage);
     const out = Buffer.alloc(totalPages * ps);
     dbBuf.copy(out, 0, 0, Math.min(dbBuf.length, out.length));

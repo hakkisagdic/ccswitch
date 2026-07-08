@@ -186,6 +186,18 @@ test('applyOverlay overlays pages and grows the file to the committed size', fun
   assert.strictEqual(merged[3 * ps], 0xdd, 'page 4 written from the WAL');
 });
 
+test('SECURITY: a WAL declaring a huge page number cannot force a giant allocation (DoS cap)', function () {
+  const ps = 1024;
+  const db = Buffer.alloc(2 * ps, 0xaa);
+  db.writeUInt16BE(ps, 16);
+  // A ~1KB commit frame that CLAIMS page 250000 / db-size 250000 — unpatched this alloc'd ~256 MB.
+  const wal = buildWal({ pageSize: ps, frames: [{ pgno: 250000, dbSize: 250000, data: page(ps, 0xee) }] });
+  const merged = wm.applyOverlay(db, wal);
+  const cap = (Math.ceil((db.length + wal.length) / ps) + 8) * ps;
+  assert.ok(merged.length <= cap, 'output is bounded to the physical input size, not the declared page number (' + merged.length + ' <= ' + cap + ')');
+  assert.ok(merged.length < 250000 * ps, 'did NOT allocate for the attacker-declared page count');
+});
+
 test('applyOverlay returns the DB unchanged when there is nothing to apply', function () {
   const ps = 1024;
   const db = Buffer.alloc(2 * ps, 0xaa);
