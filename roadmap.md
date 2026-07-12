@@ -1057,3 +1057,34 @@ CLI-only by design.
 - **Epics (unbuilt, planned):** E1 universal surface support, E2 sub⇄API bridge (`keyflip serve`),
   E3 model router (`keyflip route`), E4 config store (`keyflip config`), E5 TUI (`keyflip ui`),
   G2 VS Code/JetBrains extension, full Cursor WAL-frame merge.
+
+---
+
+## Platform expansion program (2026-07 — 3 waves, all shipped + reviewed + hardened)
+
+keyflip grew from an account-switcher into a full **AI-account control plane**. 19 new zero-dep modules
+across 3 waves, each built in parallel then integrated (CLI + MCP + bilingual docs) and put through an
+adversarial review (dimension-finders × 3-lens verify) + hardening. **124 MCP tools (0 confirm-invariant
+violations); 946 tests, 0 fail.**
+
+- **Wave 1 (foundation):** groups/tags (scoped rotation) · budget (usage-% ceilings + breach alerts) ·
+  notify (webhook + macOS banner) · import-env (.env→providers) · shell-init (direnv-style auto-activate) ·
+  WAL-merge (foreign now reads uncheckpointed Cursor chats) · audit-log viewer.
+- **Wave 2 (strategic):** orchestrator (job queue → best-headroom headless run, fanout) · cost
+  intelligence (spend/predict/by-project) · team pool (encrypted, role-scoped) · policy engine (which
+  account a dir may use; enforced on switch/run/next/orchestrator) · vault backend (1Password/Bitwarden/
+  Vault) · integrations (Slack/Discord post) · router (model arbitrage + response cache).
+- **Wave 3 (platform):** swarm (own-fleet exec — consent + EXEC-TRUST allowlist + fail-closed origin) ·
+  license (offline Ed25519 plan, no phone-home) · config store (E4) · TUI (E5, `keyflip ui`) · universal
+  surface registry (E1, `keyflip surfaces`).
+- **Also:** rebind now restores the desktop-app Code session's dropped `cliSessionId` (moved-folder
+  rescue) · VS Code extension v0.3 (accounts tree, mismatch status bar, re-link command) · productization
+  plan (`docs/PRODUCTIZATION.md`: open-core + offline license + Turkey MoR/PayTR payment).
+
+**Reviews confirmed + fixed:** wave-1 (2) · wave-2 (7: policy-bypass on run/next/orchestrator, vault
+op://, exec cwd, symlink fail-open, proto) · wave-3 (3: swarm TOFU→RCE, applyExec fail-open, surface
+ANSI). E2 (`keyflip serve`) folded into the existing failover proxy; E3 covered by router.
+
+**Still open (by design):** license paywall enforcement (wired at productization launch) · JetBrains
+plugin · device-gated Windows/Linux real-install validation + native tray + SSO live · productization
+infra (payment/issuer/site — needs the business decisions in PRODUCTIZATION.md).
