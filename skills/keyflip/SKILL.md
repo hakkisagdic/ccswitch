@@ -301,11 +301,14 @@ pins); `keyflip_transfer_pull` (pull+merge a bundle from a LAN peer running `tra
 - **Chat integrations** — `keyflip post --to <webhook> --status` posts a non-secret status to Slack/Discord.
   (MCP: `keyflip_post_status` needs `confirm`.)
 - **Swarm** — `keyflip swarm run "<cmd>" --passphrase-file <f>` queues a command onto YOUR OWN enrolled
-  fleet machines; it runs ONLY when each target's operator drains WITH CONSENT (`keyflip swarm drain
-  --allow-exec`, off by default). Commands are an argv array (no shell), origin-authenticated. This is
-  authorized distributed ops on machines you enrolled — NOT a tool for third-party targets. `keyflip
-  swarm ping <your-url>` = reachability. (MCP: `keyflip_swarm_run`/`_swarm_ping` need `confirm`,
-  `keyflip_swarm_results` (read); the consent-gated exec drain is CLI-only.)
+  fleet machines. Exec is defence-in-depth gated: it runs ONLY when the target operator (1) drains WITH
+  CONSENT (`keyflip swarm drain --allow-exec`, off by default) AND (2) has EXEC-TRUSTED the sender
+  (`keyflip swarm trust <machine>` — a curated allowlist; TOFU-pinning alone never grants exec, so a
+  leaked passphrase can't enroll a rogue machine into RCE). Commands are an argv array (no shell),
+  origin-authenticated (fail-closed). Authorized distributed ops on machines you enrolled — NOT a tool
+  for third-party targets. `keyflip swarm ping <your-url>` = reachability. (MCP:
+  `keyflip_swarm_run`/`_swarm_ping` need `confirm`, `keyflip_swarm_results` (read); the consent-gated
+  exec drain + exec-trust are CLI-only.)
 - **Settings (E4)** — `keyflip config set <key> <value>` is the one validated home for toggles.
   (MCP: `keyflip_config_list`/`_config_get` (read), `_config_set`/`_config_unset` need `confirm`.)
 - **TUI (E5)** — `keyflip ui` is a full-screen dashboard (accounts/usage/fleet). Interactive, CLI-only.

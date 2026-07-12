@@ -956,7 +956,29 @@ async function cmdSwarm(ctx, rest) {
     });
     return;
   }
-  return fail('usage: keyflip swarm <run|ping|drain|results> …  (runs on YOUR OWN enrolled fleet machines; exec is CONSENT-GATED — off unless the target drains with --allow-exec; commands are an argv array, never a shell string)');
+  if (sub === 'trust' || sub === 'untrust') {
+    // Exec-trust allowlist: a machine may run exec HERE only if you explicitly trust it (never by
+    // silent TOFU auto-pinning). Verify the fingerprint out-of-band before trusting — this grants RCE.
+    const machineArg = positionals(rest.slice(1), ['--passphrase-file'])[0];
+    if (!machineArg) return fail('usage: keyflip swarm ' + sub + ' <machine> --passphrase-file <f>');
+    const b = fleetBus(ctx, rest); if (!b) return;
+    const m = resolveMachine(fleet.readFleet(ctx, b), machineArg);
+    if (m === 'ambiguous') return fail("'" + machineArg + "' matches more than one machine");
+    if (!m) return fail("no fleet machine named '" + machineArg + "' (run `keyflip fleet status`)");
+    if (sub === 'untrust') { const had = swarm.untrustExec(ctx, m.machineId); print(had ? '🗑  ' + m.name + ' is no longer trusted for exec here' : m.name + ' was not exec-trusted'); return; }
+    if (m.pubKey) print('   ' + style.dim('key fingerprint: ') + style.bold(fleet.fingerprint(m.pubKey)) + style.dim('  — verify this is really YOUR machine before trusting it to run commands here.'));
+    swarm.trustExec(ctx, m.machineId);
+    print(style.ok('✅') + ' now trusting ' + style.bold(m.name) + ' ' + style.dim('(' + m.machineId + ')') + ' to run exec commands on this machine.');
+    return;
+  }
+  if (sub === 'trusted') {
+    const list = swarm.execTrustList(ctx);
+    if (JSON_MODE) { jsonOut({ execTrust: list }); return; }
+    if (!list.length) { print(style.dim('No machines are trusted for exec yet. Trust one: keyflip swarm trust <machine> --passphrase-file <f>')); return; }
+    print(style.bold('Machines trusted to run exec here:')); list.forEach(function (id) { print('  ' + style.ok('●') + ' ' + id); });
+    return;
+  }
+  return fail('usage: keyflip swarm <run|ping|drain --allow-exec|results|trust <machine>|untrust <machine>|trusted> …  (runs on YOUR OWN enrolled fleet machines; exec is CONSENT-GATED + requires the sender be EXEC-TRUSTED; commands are an argv array, never a shell string)');
 }
 
 // LICENSE: offline plan management (Ed25519-signed license, verified locally — no phone-home).
@@ -4044,7 +4066,7 @@ async function dispatch(ctx, cmd, rest) {
       case 'cache':
         return (rest[0] === 'purge') ? withLock(ctx, function () { return cmdCache(ctx, rest); }) : cmdCache(ctx, rest);
       case 'swarm':
-        return (rest[0] === 'drain') ? withLock(ctx, function () { return cmdSwarm(ctx, rest); }) : cmdSwarm(ctx, rest);
+        return (rest[0] === 'drain' || rest[0] === 'trust' || rest[0] === 'untrust') ? withLock(ctx, function () { return cmdSwarm(ctx, rest); }) : cmdSwarm(ctx, rest);
       case 'license':
         return (rest[0] === 'activate' || rest[0] === 'deactivate') ? withLock(ctx, function () { return cmdLicense(ctx, rest); }) : cmdLicense(ctx, rest);
       case 'config':

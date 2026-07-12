@@ -19,12 +19,17 @@ function tildify(rel) { return '~/' + String(rel).replace(/\\/g, '/'); }
 // world-readable (mode 644) file that holds ONLY identity ({ active, old:[…] }), never the token
 // (that lives in the 0600 oauth_creds.json, which we never touch). So this is the one surface where
 // a safe active-account read is possible in v1. Every field is type-checked before use so a
-// hostile/corrupt file can never throw, spoof a non-string account, or reach a prototype.
+// hostile/corrupt file can never throw, spoof a non-string account, reach a prototype, OR inject
+// terminal escapes: the account string is a semi-trusted file value that reaches a terminal render
+// (cmdSurfaces) and an MCP result, so control chars are stripped and length is capped (like fleet/tui).
+// eslint-disable-next-line no-control-regex
+const CTRL = /[\x00-\x1f\x7f]/g;
+function scrubId(s) { return (typeof s === 'string' && s) ? s.replace(CTRL, '').slice(0, 200) || null : null; }
 function geminiIdentity(ctx) {
   const obj = safe(function () { return JSON.parse(fs.readFileSync(path.join(ctx.home, '.gemini', 'google_accounts.json'), 'utf8')); }, null);
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-  const active = (typeof obj.active === 'string' && obj.active) ? obj.active : null;
-  const old = Array.isArray(obj.old) ? obj.old.filter(function (x) { return typeof x === 'string' && x; }) : [];
+  const active = scrubId(obj.active);
+  const old = Array.isArray(obj.old) ? obj.old.map(scrubId).filter(Boolean) : [];
   const accounts = [];
   if (active) accounts.push(active);
   old.forEach(function (e) { if (accounts.indexOf(e) === -1) accounts.push(e); });

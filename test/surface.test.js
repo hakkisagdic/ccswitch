@@ -107,6 +107,15 @@ test('gemini: a __proto__ key in the identity file cannot pollute Object.prototy
   assert.strictEqual(Object.prototype.polluted, undefined);
 });
 
+test('gemini: control chars in the account are STRIPPED (no terminal-escape injection into the render/MCP result)', function () {
+  const ctx = makeCtx();
+  write(ctx, '.gemini/google_accounts.json', JSON.stringify({ active: 'me\x1b[2J\x07@gmail.com', old: ['ok\x1bx@g.com'] }));
+  const s = surface.detectOne(ctx, 'gemini');
+  assert.strictEqual(/[\x00-\x1f\x7f]/.test(s.activeAccount || ''), false, 'no control chars survive into the active account');
+  assert.strictEqual(s.activeAccount, 'me[2J@gmail.com');
+  s.accounts.forEach(function (a) { assert.strictEqual(/[\x00-\x1f\x7f]/.test(a), false); });
+});
+
 // ---- opaque / secret-store surfaces: present but no identity, and secrets never read ----
 test('codex: present via secret auth.json -> present, no active account, secret store', function () {
   const ctx = makeCtx();

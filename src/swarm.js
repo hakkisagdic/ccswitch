@@ -47,6 +47,16 @@ function statePath(ctx) { return path.join(ctx.configDir, 'swarm.json'); }
 function readState(ctx) { try { return fsutil.readJsonForWrite(statePath(ctx)) || {}; } catch (e) { return {}; } }
 function writeState(ctx, obj) { try { fsutil.atomicWrite(statePath(ctx), JSON.stringify(obj, null, 2), 0o600); } catch (e) { /* best-effort */ } }
 
+// EXEC-TRUST allowlist. A sender may run exec on THIS machine ONLY if the operator EXPLICITLY trusted
+// it — never by silent TOFU auto-pinning. Otherwise a rendezvous passphrase-holder could enroll a
+// rogue identity (auto-pinned on first sight) and get RCE on the victim's next consented drain. Exec
+// is the highest-impact command type, so it needs a curated allowlist on top of origin auth + consent.
+function execTrusted(ctx) { const st = readState(ctx); const out = Object.create(null); (Array.isArray(st.execTrust) ? st.execTrust : []).forEach(function (id) { if (fleet.safeId(id)) out[id] = true; }); return out; }
+function isExecTrusted(ctx, machineId) { return execTrusted(ctx)[machineId] === true; }
+function trustExec(ctx, machineId) { if (!fleet.safeId(machineId)) return false; const st = readState(ctx); const list = Array.isArray(st.execTrust) ? st.execTrust.slice() : []; if (list.indexOf(machineId) === -1) list.push(machineId); st.execTrust = list; writeState(ctx, st); return true; }
+function untrustExec(ctx, machineId) { const st = readState(ctx); const before = (Array.isArray(st.execTrust) ? st.execTrust : []); const list = before.filter(function (id) { return id !== machineId; }); const had = before.length !== list.length; st.execTrust = list; writeState(ctx, st); return had; }
+function execTrustList(ctx) { const st = readState(ctx); return (Array.isArray(st.execTrust) ? st.execTrust : []).filter(function (id) { return fleet.safeId(id); }); }
+
 // Resolve `to` (a machine name / id / id-prefix) to a list of target machine ids. When `to` is
 // omitted, FAN OUT to every machine currently checked in to the rendezvous (fleet.readFleet).
 function targets(ctx, b, to) {
@@ -107,13 +117,15 @@ function ping(ctx, b, url, opts) {
 function applyExec(ctx, cmd, opts) {
   opts = opts || {};
   if (!cmd || cmd.type !== 'exec') return { ok: false, applied: 'exec', detail: 'not an exec command' };
-  // Origin authentication (defence in depth — the drain already gates on fleet.checkOrigin).
-  if (opts.requireSignature || opts.senderKey) {
+  // Consent gate — exec is OFF unless the operator explicitly turned it on for this drain.
+  if (opts.allowExec !== true) return { ok: false, applied: 'exec', detail: 'skipped (exec is off by default — pass --allow-exec)', skipped: 'consent' };
+  // Origin authentication is MANDATORY (fail-closed): a signature from the sender's pinned key,
+  // addressed to THIS machine. A direct caller MUST pass senderKey; `unverified:true` bypasses ONLY in
+  // a context that already verified (never a network default). The drain always passes senderKey.
+  if (opts.unverified !== true) {
     if (!fleet.verifyCommand(cmd, opts.senderKey)) return { ok: false, applied: 'exec', detail: 'unverified origin (rejected)' };
     if (cmd.to !== fleet.identity(ctx).machineId) return { ok: false, applied: 'exec', detail: 'wrong recipient (rejected)' };
   }
-  // Consent gate — exec is OFF unless the operator explicitly turned it on for this drain.
-  if (opts.allowExec !== true) return { ok: false, applied: 'exec', detail: 'skipped (exec is off by default — pass --allow-exec)', skipped: 'consent' };
   const payload = cmd.payload || {};
   let command, args;
   try { command = normCommand(payload.command); args = normArgs(payload.args); }
@@ -169,7 +181,15 @@ function drainExec(ctx, b, opts) {
     // Origin authentication: reject anything not signed by the sender's TOFU-pinned key.
     const origin = fleet.checkOrigin(ctx, cmd, reconcile);
     if (!origin.ok) { results.push({ ok: false, applied: 'exec', detail: 'rejected: ' + origin.reason, id: cmd.id }); return; }
-    const r = applyExec(ctx, cmd, { allowExec: opts.allowExec === true, run: opts.run, timeoutMs: opts.timeoutMs, bus: b, senderKey: origin.key, requireSignature: true });
+    // Exec-trust: the sender must be EXPLICITLY trusted for exec (not merely TOFU-pinned). This closes
+    // the "passphrase-holder enrolls a rogue identity → auto-pinned → RCE on the next consented drain"
+    // path. opts.trustAll bypasses ONLY for tests exercising run mechanics.
+    if (opts.trustAll !== true && !isExecTrusted(ctx, cmd.from)) {
+      kept.push(cmd);
+      results.push({ ok: false, applied: 'exec', detail: "sender '" + cmd.from + "' is not trusted for exec — run `keyflip swarm trust " + cmd.from + "` after verifying it is really yours", skipped: 'untrusted', id: cmd.id, from: cmd.from });
+      return;
+    }
+    const r = applyExec(ctx, cmd, { allowExec: opts.allowExec === true, run: opts.run, timeoutMs: opts.timeoutMs, bus: b, senderKey: origin.key });
     r.id = cmd.id; r.from = cmd.from;
     if (r.skipped === 'consent') { kept.push(cmd); results.push(r); return; } // keep for a later consented drain
     if (r.ok && cmd.id) fleet.markApplied(ctx, cmd.id); // ledger so it is never verbatim-replayed
@@ -223,5 +243,6 @@ module.exports = {
   publishResult: publishResult, resultName: resultName,
   targets: targets, normArgs: normArgs, normCommand: normCommand, capOutput: capOutput,
   readState: readState, writeState: writeState, statePath: statePath,
+  execTrusted: execTrusted, isExecTrusted: isExecTrusted, trustExec: trustExec, untrustExec: untrustExec, execTrustList: execTrustList,
   RESULT_SUFFIX: RESULT_SUFFIX, MAX_OUTPUT: MAX_OUTPUT,
 };

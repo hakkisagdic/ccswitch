@@ -46,7 +46,7 @@ test('run across the fleet: A queues an exec for B; B drains + runs it; A aggreg
   assert.strictEqual(q.commands[0].machineId, fleet.identity(B).machineId);
 
   const run = fakeRun(function () { return { code: 0, stdout: 'hi\n', stderr: '', error: null }; });
-  const d = swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: run });
+  const d = swarm.drainExec(B, busOf(B, dir), { trustAll: true, allowExec: true, run: run });
   assert.strictEqual(d.results.length, 1);
   assert.ok(d.results[0].ok, JSON.stringify(d.results[0]));
   assert.strictEqual(run.calls[0].cmd, 'echo');
@@ -82,12 +82,12 @@ test('consent gate: a drain WITHOUT allowExec runs nothing and keeps the command
   swarm.queueExec(A, busOf(A, dir), { command: 'rm', args: ['-rf', '/tmp/x'], to: 'beta' });
 
   const run = fakeRun();
-  const d = swarm.drainExec(B, busOf(B, dir), { allowExec: false, run: run });
+  const d = swarm.drainExec(B, busOf(B, dir), { trustAll: true, allowExec: false, run: run });
   assert.strictEqual(run.calls.length, 0, 'nothing executes without consent');
   assert.strictEqual(d.results[0].skipped, 'consent');
   assert.strictEqual(fleet.readInbox(B, busOf(B, dir)).length, 1, 'the unconsented exec stays in the inbox');
 
-  const d2 = swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: run });
+  const d2 = swarm.drainExec(B, busOf(B, dir), { trustAll: true, allowExec: true, run: run });
   assert.strictEqual(run.calls.length, 1, 'the same command runs once consent is given');
   assert.ok(d2.results[0].ok);
   assert.strictEqual(fleet.readInbox(B, busOf(B, dir)).length, 0, 'now consumed');
@@ -108,7 +108,7 @@ test('applyExec is off by default: allowExec must be exactly true', function () 
 test('argv-array only: a string payload.args is rejected (no shell injection surface)', function () {
   const B = machine('beta', sharedDir());
   const cmd = { id: 'x2', from: 'a', to: fleet.identity(B).machineId, at: B.now(), type: 'exec', payload: { command: 'sh', args: 'rm -rf / #' } };
-  const r = swarm.applyExec(B, cmd, { allowExec: true, run: fakeRun() });
+  const r = swarm.applyExec(B, cmd, { allowExec: true, unverified: true, run: fakeRun() });
   assert.ok(!r.ok && /ARGV ARRAY|array/i.test(r.detail), r.detail);
 });
 
@@ -133,7 +133,7 @@ test('origin-auth: a FORGED exec (attacker key, claims from=alpha) is rejected a
   const bB = busOf(B, dir);
   bB.write(fleet.inboxName(fleet.identity(B).machineId), [forged]);
   const run = fakeRun();
-  const d = swarm.drainExec(B, bB, { allowExec: true, run: run });
+  const d = swarm.drainExec(B, bB, { trustAll: true, allowExec: true, run: run });
   assert.strictEqual(run.calls.length, 0, 'a forged command never executes');
   assert.ok(/rejected/.test(d.results[0].detail), d.results[0].detail);
 });
@@ -147,10 +147,10 @@ test('replay: an already-applied exec id is remembered and not re-run when re-in
   const bB = busOf(B, dir);
   const orig = fleet.readInbox(B, bB)[0];
   const run = fakeRun();
-  swarm.drainExec(B, bB, { allowExec: true, run: run });
+  swarm.drainExec(B, bB, { trustAll: true, allowExec: true, run: run });
   assert.strictEqual(run.calls.length, 1);
   bB.write(fleet.inboxName(fleet.identity(B).machineId), [orig]); // replay the identical captured bytes
-  const d2 = swarm.drainExec(B, bB, { allowExec: true, run: run });
+  const d2 = swarm.drainExec(B, bB, { trustAll: true, allowExec: true, run: run });
   assert.strictEqual(run.calls.length, 1, 'the replayed command is not re-run');
   assert.ok(/already applied/.test(d2.results[0].detail), d2.results[0].detail);
 });
@@ -162,7 +162,7 @@ test('non-exec commands are left in the inbox for `fleet push` (swarm only consu
   fleet.publish(B, busOf(B, dir), {});
   fleet.queue(A, busOf(A, dir), fleet.identity(B).machineId, { type: 'switch', payload: { account: 'work' } });
   swarm.queueExec(A, busOf(A, dir), { command: 'echo', args: ['k'], to: 'beta' });
-  swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: fakeRun() });
+  swarm.drainExec(B, busOf(B, dir), { trustAll: true, allowExec: true, run: fakeRun() });
   const rest = fleet.readInbox(B, busOf(B, dir));
   assert.ok(rest.some(function (c) { return c.type === 'switch'; }), 'switch is left for fleet push');
   assert.ok(!rest.some(function (c) { return c.type === 'exec'; }), 'exec is consumed by the swarm drain');
@@ -194,10 +194,10 @@ test('aggregate: only results addressed to this machine are visible; group filte
   const A = machine('alpha', dir), B = machine('beta', dir), C = machine('gamma', dir);
   [A, B, C].forEach(function (m) { fleet.publish(m, busOf(m, dir), {}); });
   const q1 = swarm.queueExec(A, busOf(A, dir), { command: 'echo', args: ['1'], to: 'beta' });
-  swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: fakeRun(function () { return { code: 0, stdout: 'r1', stderr: '', error: null }; }) });
+  swarm.drainExec(B, busOf(B, dir), { trustAll: true, allowExec: true, run: fakeRun(function () { return { code: 0, stdout: 'r1', stderr: '', error: null }; }) });
   // C issues its OWN exec to B — that result is addressed to C and must NOT leak into A's view.
   swarm.queueExec(C, busOf(C, dir), { command: 'echo', args: ['2'], to: 'beta' });
-  swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: fakeRun(function () { return { code: 0, stdout: 'r2', stderr: '', error: null }; }) });
+  swarm.drainExec(B, busOf(B, dir), { trustAll: true, allowExec: true, run: fakeRun(function () { return { code: 0, stdout: 'r2', stderr: '', error: null }; }) });
 
   const recA = fleet.reconcileKeys(A, fleet.readFleet(A, busOf(A, dir)));
   const scoped = swarm.aggregate(A, busOf(A, dir), { group: q1.group, reconcile: recA });
@@ -225,7 +225,7 @@ test('aggregate: peer output is size-capped and control chars are scrubbed (tabs
   fleet.publish(B, busOf(B, dir), {});
   const big = '\x1b[2Jline\ttab\n' + 'A'.repeat(200000); // control chars up front, within the cap window
   swarm.queueExec(A, busOf(A, dir), { command: 'cat', args: ['big'], to: 'beta' });
-  swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: fakeRun(function () { return { code: 0, stdout: big, stderr: '', error: null }; }) });
+  swarm.drainExec(B, busOf(B, dir), { trustAll: true, allowExec: true, run: fakeRun(function () { return { code: 0, stdout: big, stderr: '', error: null }; }) });
   const agg = swarm.aggregate(A, busOf(A, dir), {});
   assert.ok(agg[0].stdout.length <= swarm.MAX_OUTPUT + 32, 'stdout is capped');
   assert.strictEqual(agg[0].stdout.indexOf('\x1b'), -1, 'ANSI ESC is stripped');
@@ -235,7 +235,7 @@ test('aggregate: peer output is size-capped and control chars are scrubbed (tabs
 test('applyExec caps output directly and reports a non-zero exit as result.ok=false while still "applied"', function () {
   const B = machine('beta', sharedDir());
   const cmd = { id: 'cap1', from: 'a', to: fleet.identity(B).machineId, at: B.now(), type: 'exec', payload: { command: 'false', args: [] } };
-  const r = swarm.applyExec(B, cmd, { allowExec: true, run: function () { return { code: 3, stdout: 'A'.repeat(999999), stderr: 'boom', error: null }; } });
+  const r = swarm.applyExec(B, cmd, { allowExec: true, unverified: true, run: function () { return { code: 3, stdout: 'A'.repeat(999999), stderr: 'boom', error: null }; } });
   assert.ok(r.ok, 'we ran it (so it is ledgered / not replayed)');
   assert.strictEqual(r.result.ok, false, 'the command itself failed (exit 3)');
   assert.strictEqual(r.result.code, 3);
@@ -264,4 +264,35 @@ test('robustness: applyExec ignores a non-exec command and a wrong-recipient sig
 test('resultName rejects an unsafe id (defence in depth)', function () {
   assert.throws(function () { swarm.resultName('../evil'); }, /unsafe/);
   assert.ok(/^[0-9a-f]+\.result\.enc$/.test(swarm.resultName('abc123')));
+});
+
+// ---------------------------------------------------------------------------
+// Wave-3 hardening: exec-trust allowlist (TOFU pin alone must NOT grant exec) + fail-closed applyExec
+// ---------------------------------------------------------------------------
+test('exec-trust: a signed exec from an UNTRUSTED (only TOFU-pinned) sender is REFUSED until swarm trust', function () {
+  const dir = sharedDir();
+  const A = machine('alpha', dir), B = machine('beta', dir);
+  fleet.publish(A, busOf(A, dir), {});
+  fleet.publish(B, busOf(B, dir), {});
+  swarm.queueExec(A, busOf(A, dir), { command: 'echo', args: ['x'], to: 'beta' });
+  const run = fakeRun();
+  // B has A's key TOFU-pinned (origin verifies) but has NOT exec-trusted A -> refused, kept in inbox.
+  const d = swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: run });
+  assert.strictEqual(run.calls.length, 0, 'a rogue/untrusted sender cannot run exec via auto-pin');
+  assert.strictEqual(d.results[0].skipped, 'untrusted');
+  assert.strictEqual(fleet.readInbox(B, busOf(B, dir)).length, 1, 'kept for a later run once trusted');
+  // Explicitly trust A for exec, then it runs.
+  swarm.trustExec(B, fleet.identity(A).machineId);
+  const d2 = swarm.drainExec(B, busOf(B, dir), { allowExec: true, run: run });
+  assert.strictEqual(run.calls.length, 1, 'runs once the sender is explicitly exec-trusted');
+  assert.ok(d2.results[0].ok);
+});
+
+test('applyExec is FAIL-CLOSED: allowExec+consent is not enough — origin MUST verify (no senderKey => rejected)', function () {
+  const B = machine('beta', sharedDir());
+  const cmd = { id: 'z1', from: 'a', to: fleet.identity(B).machineId, at: B.now(), type: 'exec', payload: { command: 'echo', args: ['y'] } };
+  const run = fakeRun();
+  const r = swarm.applyExec(B, cmd, { allowExec: true, run: run }); // no senderKey, no unverified
+  assert.ok(!r.ok && /unverified origin/.test(r.detail), r.detail);
+  assert.strictEqual(run.calls.length, 0, 'nothing runs without a verified origin');
 });
