@@ -79,10 +79,25 @@ keyflip's revenue is mostly **international** (a global dev tool), and the found
    license-issuer orchestration. This is the "kendimiz yazarız / POS alarak ilerleriz" option, done
    safely.
 
-**Chosen default to build against: Lemon Squeezy (MoR) primary + PayTR (local) secondary**, both feeding
-the same license-issuer. This gets a global paid launch live fastest with the least fee/effort, and the
-PayTR leg captures TR customers at the lowest domestic rate. Re-verify LS Turkey eligibility first; if
-it's not live, swap in Polar.sh with no other change (same webhook→issuer contract).
+**DECISION (owner, 2026-07): support FOUR providers behind one issuer, selectable from a central config.**
+- **Global:** Lemon Squeezy (MoR — lowest fee, handles tax) **and** Stripe.
+- **Local (Turkey, TRY + taksit):** iyzico **and** PayTR.
+- ⚠️ **Stripe caveat:** Stripe does not onboard TR-registered sellers, so its adapter is usable only via a
+  foreign entity (e.g. a US LLC / Stripe Atlas). The code adapter can exist regardless; enable it only
+  once you have an eligible Stripe entity.
+
+**Central selection ("tercihleri bir yerden yapacağız"):** the issuer reads `issuer.config.json`
+(non-secret: which providers are enabled + routing — e.g. route TR customers to iyzico/PayTR, others to
+Lemon Squeezy/Stripe) plus per-provider webhook secrets from ENV/KMS (never committed). Each provider is
+a small **adapter** implementing one contract:
+`verifyWebhook(rawBody, headers, secret) -> { ok, event, email, tier }` (verify the provider's signature,
+map its product/price to a keyflip tier). The issuer core is provider-agnostic: adapter verifies →
+issuer signs one Ed25519 license → delivers. Adding/removing a provider is one adapter file + a config
+flag; the customer-facing keyflip client (`license.js`) never changes.
+
+Build order for the issuer scaffold (`issuer/`, separate from the zero-dep CLI):
+`keygen` (Ed25519) → `sign(license)` → adapters `stripe.js` / `lemonsqueezy.js` / `iyzico.js` / `paytr.js`
+→ a tiny `node:http` router that dispatches a webhook to the enabled adapter, verifies, signs, delivers.
 
 **Fulfillment flow (provider-agnostic):** `payment succeeded` webhook → a tiny **license-issuer**
 service verifies the webhook signature, signs an Ed25519 license for `{tier, email, expiry}`, and
