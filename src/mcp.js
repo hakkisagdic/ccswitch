@@ -607,7 +607,7 @@ const TOOLS = [
       if (!name) throw new Error("no such account: '" + args.name + "' (use keyflip_list)");
       const em = profiles.email(ctx.configDir, name);
       if (!args.force && em && em === core.currentEmail(ctx)) {
-        const live = require('./appctl').claudeInstances(ctx.home);
+        const live = appctl.claudeInstances(ctx.home);
         if (live.length) throw new Error("'" + em + "' is the active account " + live.length + ' running Claude session(s) are using — close them first, or set force=true');
       }
       const l = await lock.acquire(ctx.configDir);
@@ -884,6 +884,12 @@ const TOOLS = [
     description: 'Remove the routing pin for a model (falls back to cheapest). Ask the user, then confirm=true.',
     inputSchema: { type: 'object', properties: { model: { type: 'string' }, confirm: confirmProp.confirm }, required: ['model', 'confirm'], additionalProperties: false }, annotations: MUT,
     run: async function (ctx, args) { needConfirm(args); return { cleared: require('./router').clearRoute(ctx, String(args.model)) }; },
+  },
+  {
+    name: 'keyflip_route_arbitrage', title: 'Toggle always-cheapest routing',
+    description: 'Turn model-cost ARBITRAGE on/off — when on, routing always picks the cheapest configured provider that serves a model (overriding pins). Ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { on: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['on', 'confirm'], additionalProperties: false }, annotations: MUT,
+    run: async function (ctx, args) { needConfirm(args); return { arbitrage: require('./router').setArbitrage(ctx, !!args.on) }; },
   },
   {
     name: 'keyflip_cache_purge', title: 'Purge the response cache',
