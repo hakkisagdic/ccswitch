@@ -1088,3 +1088,31 @@ ANSI). E2 (`keyflip serve`) folded into the existing failover proxy; E3 covered 
 **Still open (by design):** license paywall enforcement (wired at productization launch) · JetBrains
 plugin · device-gated Windows/Linux real-install validation + native tray + SSO live · productization
 infra (payment/issuer/site — needs the business decisions in PRODUCTIZATION.md).
+
+---
+
+## Wave 4 — Context Layer (AI Development Context Platform) — PLANNED (owner-approved 2026-07)
+
+Reframe: the real problem isn't switching Claude accounts, it's PROJECT MEMORY lost when the developer
+changes AI TOOL (Kiro→Cursor→Claude Code→opencode), account, or machine. keyflip becomes a tool-agnostic
+**AI Development Context Layer**: a portable, structured project memory that moves across tools/accounts/
+machines. ~55% of the plumbing already exists (foreign import/normalize, agents config carry, secretscan,
+migrate/transfer/sync, surface E1 registry, sessions distill/compact, cost attribution); Wave 4 adds the
+differentiating layer. Zero-dep JS (the proposal's TS interfaces become JSDoc/schema-validated JS).
+
+New modules (build on foreign.js/agents.js/surface.js/secretscan.js/migrate.js/vcs.js — modular, NOT a rewrite):
+- **context.js** — the `.keyflip/` project-context store + NormalizedProjectContext (project.json, context.md,
+  decisions.json, tasks.json). Schema-versioned; `pack` runs secretscan so NO secret ever enters the package.
+- **rulesmodel.js** — normalize agent rule files (.cursorrules/CLAUDE.md/AGENTS.md/GEMINI.md/…) into ONE common
+  rule model, then RE-EMIT per target tool (Cursor rules → common → CLAUDE.md).
+- **checkpoint.js** — git-bound checkpoints (branch/commit/dirty-files + a session summary) — portable project
+  state at session end.
+- **handoff.js** — target-aware CONTINUE-PROMPT generator (from context+tasks+decisions+checkpoint).
+- **ctxsync.js** — context-sync PRIVACY MODES (local / git / encrypted-cloud / company-policy w/ allowedProviders)
+  + conflict detection (content hash + parent checkpoint) for the same context edited on 2 machines.
+- Registries: add **Kiro** and **Windsurf** to agents.js + foreign.js; add the EXPORT side (foreign is import-only).
+
+CLI: `keyflip context <init|status|pack|export --to <tool>|decision|task|checkpoint|handoff --to <tool>|sync>`.
+MVP order (per the proposal): MVP1 Claude project-context + tasks + session summary + secret-filtered export;
+MVP2 Cursor adapter + rules transform + continue-prompt + git checkpoints; MVP3 Kiro/opencode/Windsurf +
+cloud sync + conflict + team/policy. Positioning: "AI coding tools change. Your project memory should not."
