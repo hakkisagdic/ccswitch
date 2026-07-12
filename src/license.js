@@ -69,6 +69,29 @@ const FEATURES = Object.assign(Object.create(null), {
   swarm: 'team',
 });
 
+// Paywall enforcement is OFF unless KEYFLIP_LICENSING is explicitly enabled. So requireTier() and the
+// central CLI/MCP gates are no-ops by default — shipping the machinery WITHOUT gating anyone until the
+// product launches. Flip it on with `KEYFLIP_LICENSING=1` (env) once the issuer/checkout are live.
+function enforcementEnabled() { const v = process.env.KEYFLIP_LICENSING; return v === '1' || v === 'true' || v === 'on'; }
+
+// Map a CLI command OR an MCP tool name to the paywalled feature it belongs to (null = free/core).
+const CMD_FEATURE = Object.assign(Object.create(null), {
+  fleet: 'fleet', 'run-job': 'orchestrator', jobs: 'orchestrator', fanout: 'orchestrator', 'fan-out': 'orchestrator',
+  cost: 'cost', budget: 'budget', notify: 'notify', autoswitch: 'autoswitch', route: 'router', cache: 'router', post: 'notify',
+  team: 'teampool', policy: 'policy', vault: 'vault', swarm: 'swarm',
+});
+const AREA_FEATURE = Object.assign(Object.create(null), {
+  fleet: 'fleet', job: 'orchestrator', jobs: 'orchestrator', fanout: 'orchestrator', cost: 'cost', budget: 'budget',
+  notify: 'notify', autoswitch: 'autoswitch', route: 'router', cache: 'router', post: 'notify', team: 'teampool',
+  policy: 'policy', vault: 'vault', swarm: 'swarm',
+});
+function featureFor(name) {
+  const n = String(name || '');
+  if (Object.prototype.hasOwnProperty.call(CMD_FEATURE, n)) return CMD_FEATURE[n];
+  const m = /^keyflip_([a-z]+)/.exec(n); // MCP tool: keyflip_<area>_...
+  return (m && AREA_FEATURE[m[1]]) || null;
+}
+
 // ---- token codec -------------------------------------------------------------
 function b64uEnc(buf) { return Buffer.from(buf).toString('base64url'); }
 function b64uDec(s) { return Buffer.from(String(s), 'base64url'); }
@@ -227,6 +250,8 @@ function gate(ctx, feature) {
 // requireTier(ctx, feature): allow, or throw a clear LICENSE_REQUIRED error naming
 // the plan the user needs. Call this at the TOP of every paid handler.
 function requireTier(ctx, feature) {
+  if (!enforcementEnabled()) return true; // paywall OFF by default — a pure no-op until KEYFLIP_LICENSING=1
+  if (!feature || !FEATURES[feature]) return true; // free/core feature
   if (gate(ctx, feature)) return true;
   const min = FEATURES[feature] || 'pro';
   const err = new Error('this feature needs the ' + min + ' plan (keyflip license activate ...)');
@@ -317,6 +342,9 @@ module.exports = {
   // gating
   gate: gate,
   requireTier: requireTier,
+  enforcementEnabled: enforcementEnabled,
+  featureFor: featureFor,
+  requireForName: function (ctx, name) { return requireTier(ctx, featureFor(name)); },
   unlockedFeatures: unlockedFeatures,
   FEATURES: FEATURES,
   TIER_ORDER: TIER_ORDER,

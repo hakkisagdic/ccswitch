@@ -3980,6 +3980,10 @@ async function main(argv) {
 }
 
 async function dispatch(ctx, cmd, rest) {
+  // Paywall gate (a NO-OP unless KEYFLIP_LICENSING is enabled) — one central check maps the command to
+  // its tier and blocks it with a clear upgrade message when the license is insufficient.
+  try { require('./license').requireForName(ctx, cmd); }
+  catch (e) { if (e && e.code === 'LICENSE_REQUIRED') return fail(e.message); throw e; }
   {
     switch (cmd) {
       case undefined:

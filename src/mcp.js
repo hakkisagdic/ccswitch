@@ -1319,6 +1319,8 @@ async function handle(ctx, msg) {
       const tool = TOOLS.filter(function (t) { return t.name === params.name; })[0];
       if (!tool) return rpcError(-32602, 'unknown tool: ' + params.name);
       try {
+        // Paywall gate (NO-OP unless KEYFLIP_LICENSING is enabled): map the tool to its tier + block if insufficient.
+        require('./license').requireForName(ctx, tool.name);
         const result = await tool.run(ctx, params.arguments || {});
         return respond({
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],

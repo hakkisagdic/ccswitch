@@ -218,6 +218,10 @@ test('no license, corrupt file, and deactivate all resolve to free', function ()
 test('gate/requireTier enforce the tier ladder', function () {
   const k = freshKeys();
   license.setPublicKey(k.pubB64);
+  // requireTier ENFORCES only when the paywall is on; enable it for this ladder test (gate() is env-independent).
+  const prevEnv = process.env.KEYFLIP_LICENSING;
+  process.env.KEYFLIP_LICENSING = '1';
+  try {
 
   // free: no license
   const free = makeCtx({ now: NOW });
@@ -247,6 +251,7 @@ test('gate/requireTier enforce the tier ladder', function () {
   ['fleet', 'vault', 'policy', 'teampool', 'swarm'].forEach(function (f) {
     assert.strictEqual(license.gate(ent, f), true, 'enterprise should unlock ' + f);
   });
+  } finally { if (prevEnv === undefined) delete process.env.KEYFLIP_LICENSING; else process.env.KEYFLIP_LICENSING = prevEnv; }
 });
 
 test('unlockedFeatures reflects the effective tier', function () {
@@ -293,4 +298,24 @@ test('MCP license_activate requires confirm and then activates from a file', asy
   assert.strictEqual(out.activated, true);
   assert.strictEqual(out.tier, 'team');
   assert.strictEqual(license.tier(ctx), 'team');
+});
+
+// Paywall enforcement is OFF unless KEYFLIP_LICENSING is enabled — shipping the machinery without
+// gating anyone until launch. requireTier must be a pure no-op by default.
+test('paywall is env-gated: requireTier is a no-op unless KEYFLIP_LICENSING is set', function () {
+  const license = require('../src/license');
+  const ctx = makeCtx();
+  const prev = process.env.KEYFLIP_LICENSING;
+  try {
+    delete process.env.KEYFLIP_LICENSING;
+    assert.strictEqual(license.enforcementEnabled(), false);
+    assert.strictEqual(license.requireTier(ctx, 'fleet'), true, 'no-op when disabled (free tier, paid feature)');
+    assert.strictEqual(license.requireForName(ctx, 'keyflip_fleet_status'), true);
+    process.env.KEYFLIP_LICENSING = '1';
+    assert.strictEqual(license.enforcementEnabled(), true);
+    assert.throws(function () { license.requireTier(ctx, 'fleet'); }, function (e) { return e.code === 'LICENSE_REQUIRED' && e.requiredTier === 'pro'; }, 'blocks a paid feature on the free tier when enabled');
+    assert.strictEqual(license.requireForName(ctx, 'list'), true, 'a free/core command is never gated');
+  } finally { if (prev === undefined) delete process.env.KEYFLIP_LICENSING; else process.env.KEYFLIP_LICENSING = prev; }
+  assert.strictEqual(license.featureFor('cost'), 'cost');
+  assert.strictEqual(license.featureFor('list'), null);
 });
