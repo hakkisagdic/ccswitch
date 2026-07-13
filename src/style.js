@@ -8,8 +8,11 @@ function colorEnabled(stream) {
   return !!(stream && stream.isTTY);
 }
 
-function make(stream) {
-  const on = colorEnabled(stream);
+// opts.color === false hard-disables color (config ui.color=false), matching NO_COLOR. It only ever
+// DISABLES — passing true never forces color into a non-TTY pipe; TTY detection still governs that.
+function make(stream, opts) {
+  let on = colorEnabled(stream);
+  if (opts && opts.color === false) on = false;
   const wrap = function (code) {
     return function (s) { return on ? '\x1b[' + code + 'm' + s + '\x1b[0m' : String(s); };
   };

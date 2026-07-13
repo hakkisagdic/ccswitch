@@ -37,7 +37,7 @@ const proxy = require('./proxy');
 const uninstallmod = require('./uninstall');
 const exec = require('./exec');
 const loginmod = require('./login');
-const style = require('./style').make(process.stdout);
+let style = require('./style').make(process.stdout); // may be re-made in main() once config ui.color is known
 
 // Serialize every mutation across processes (double-fired alias, launcher app
 // racing a terminal, two menus) so a switch can never interleave with another.
@@ -4203,6 +4203,9 @@ async function main(argv) {
   const cmd = argv[0];
   const rest = argv.slice(1);
   const ctx = createContext();
+  // Honor config ui.color=false (hard-disable color, like NO_COLOR). Re-made here because ctx —
+  // and thus config — isn't available when the module-level `style` is first created. Only disables.
+  try { if (require('./config').get(ctx, 'ui.color') === false) style = require('./style').make(process.stdout, { color: false }); } catch (e) { /* keep the default style */ }
   logmod.init(ctx.configDir, debug);
   // H3: a descriptive label for the auto-version commit (argv holds no secrets by rule).
   ctx._vcsLabel = [cmd].concat(rest.filter(function (a) { return a && a[0] !== '-'; }).slice(0, 2)).join(' ') || 'update';

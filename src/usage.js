@@ -72,12 +72,19 @@ function fmt(usage) {
 
 function cachePath(ctx) { return path.join(ctx.configDir, '.usage-cache.json'); }
 
+// The cache TTL, in ms, defaulting from config (`keyflip config set usage.cacheTtlSeconds N`).
+// Falls back to the built-in 60s if config is unreadable. Callers can still override via opts.cacheTtlMs.
+function cfgTtlMs(ctx) {
+  try { const s = require('./config').get(ctx, 'usage.cacheTtlSeconds'); return (typeof s === 'number' ? s : 60) * 1000; }
+  catch (e) { return CACHE_TTL_MS; }
+}
+
 // Usage per profile name -> { status: 'ok'|'no-creds'|'no-token'|'error',
 // usage, headroom }. Serves a 60s cache to keep list/strategy calls cheap.
 async function usageForProfiles(ctx, names, opts) {
   opts = opts || {};
   const nowMs = opts.nowMs !== undefined ? opts.nowMs : Date.now();
-  const ttl = opts.cacheTtlMs || CACHE_TTL_MS;
+  const ttl = opts.cacheTtlMs || cfgTtlMs(ctx);
   // Null-prototype + shape check: a corrupt/tampered cache (scalar JSON, a
   // far-future timestamp pinning fake usage, or a '__proto__' key) must never
   // poison a lookup — fall back to a fresh fetch instead.

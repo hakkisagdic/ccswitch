@@ -49,6 +49,23 @@ test('usageForProfiles reports sentinels and serves the cache', async function (
   assert.strictEqual(calls, 1);
 });
 
+test('usageForProfiles honors config usage.cacheTtlSeconds for the default TTL', function () {
+  return (async function () {
+    const ctx = makeCtx();
+    ctx.store.setProfile('ok', blobWithToken('T1'));
+    let calls = 0;
+    const f = async function () { calls++; return { ok: true, json: async function () { return { five_hour: { utilization: 50 } }; } }; };
+    require('../src/config').set(ctx, 'usage.cacheTtlSeconds', '5'); // 5-second cache
+    const NOW = 1800000000000;
+    await usage.usageForProfiles(ctx, ['ok'], { fetch: f, nowMs: NOW });
+    assert.strictEqual(calls, 1);
+    await usage.usageForProfiles(ctx, ['ok'], { fetch: f, nowMs: NOW + 4000 }); // within 5s
+    assert.strictEqual(calls, 1, 'served from cache within the configured 5s TTL');
+    await usage.usageForProfiles(ctx, ['ok'], { fetch: f, nowMs: NOW + 6000 }); // past 5s
+    assert.strictEqual(calls, 2, 'refetched after the configured TTL elapsed');
+  })();
+});
+
 test('a 401 from the usage API surfaces as the "expired" sentinel', async function () {
   const ctx = makeCtx();
   ctx.store.setProfile('stale', blobWithToken('DEAD'));
