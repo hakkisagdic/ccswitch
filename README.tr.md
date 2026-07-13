@@ -147,6 +147,7 @@ keyflip swarm <run "<cmd>"|ping <url>|drain --allow-exec|results>   # KENDİ kay
 keyflip config <list|get <k>|set <k> <v>|unset <k>>   # ayarlar için tek doğrulanmış ev (E4)
 keyflip ui [--fleet]          # tam ekran TUI: hesaplar · sağlayıcı kullanımı (u) · filo (f) · aranabilir KOMUT PALETİ (p) — hiçbir komutu ezberlemene gerek yok
 keyflip codexbar              # yerel kurulu CodexBar kullanım-monitörüne köprü: izlediği sağlayıcıları keyflip'inkiyle hizala (sır okumaz)
+keyflip brain "<niyet>"       # OPT-IN: düz dili, tek tek onaylayacağın bir keyflip adım planına çevir (Gemini; SADECE önerir, kendi başına çalıştırmaz)
 keyflip surfaces              # bu makinedeki diğer AI araçlarını algıla (Cursor/Gemini/Codex/Copilot/opencode/Aider) — salt-okunur
 keyflip license <status|activate <dosya>|deactivate>   # offline plan (Ed25519-imzalı, phone-home yok)
 keyflip run <ad> [-- argümanlar]  # PARALEL oturum: o hesap YALNIZCA bu terminalde

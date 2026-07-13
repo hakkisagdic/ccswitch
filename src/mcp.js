@@ -950,6 +950,12 @@ const TOOLS = [
     run: async function (ctx) { const cb = require('./codexbar'); return { detected: cb.detect(ctx), align: cb.align(ctx) }; },
   },
   {
+    name: 'keyflip_brain_propose', title: 'Propose a plan of keyflip steps (opt-in)',
+    description: 'Turn a plain-language intent into a PROPOSED plan of keyflip commands (via Gemini). PROPOSE-ONLY — it never executes anything; it returns validated steps (each tagged safe/mutating) for the human to approve and run. OFF unless KEYFLIP_BRAIN=1 and GEMINI_API_KEY are set (returns enabled:false otherwise). All outbound context is secret-scrubbed; the API key is never returned. Read-only.',
+    inputSchema: { type: 'object', properties: { intent: { type: 'string' } }, required: ['intent'], additionalProperties: false }, annotations: RO,
+    run: async function (ctx, args) { return require('./brain').propose(ctx, String(args.intent == null ? '' : args.intent), {}); },
+  },
+  {
     name: 'keyflip_config_set', title: 'Change a keyflip setting',
     description: 'Set a setting to a new value (validated + coerced against the schema; unknown key / wrong type / out-of-range are rejected). Changes future keyflip behavior. Ask the user, then confirm=true.',
     inputSchema: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, confirm: confirmProp.confirm }, required: ['key', 'value', 'confirm'], additionalProperties: false }, annotations: MUT,

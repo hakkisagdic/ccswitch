@@ -147,6 +147,7 @@ keyflip swarm <run "<cmd>"|ping <url>|drain --allow-exec|results>   # run a comm
 keyflip config <list|get <k>|set <k> <v>|unset <k>>   # one validated home for settings (E4)
 keyflip ui [--fleet]          # full-screen TUI: accounts · provider usage (u) · fleet (f) · a searchable COMMAND PALETTE (p) so nothing has to be memorized
 keyflip codexbar              # bridge to a locally-installed CodexBar usage monitor: align its tracked providers with keyflip's (reads no secrets)
+keyflip brain "<intent>"      # OPT-IN: turn plain language into a proposed plan of keyflip steps you approve one-by-one (Gemini; only PROPOSES, never runs on its own)
 keyflip surfaces              # detect other AI tools on this machine (Cursor/Gemini/Codex/Copilot/opencode/Aider) — read-only
 keyflip license <status|activate <file>|deactivate>   # offline plan (Ed25519-signed, no phone-home)
 keyflip run <name> [-- args]  # PARALLEL session: that account in THIS terminal only

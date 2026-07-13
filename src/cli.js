@@ -186,6 +186,8 @@ function usage() {
   print('  keyflip handoff [--to <claude|cursor|kiro|opencode|windsurf|generic>]   print a CONTINUE-PROMPT so a NEW tool can resume this project');
   print('  keyflip ui                    full-screen TUI: accounts, provider usage (u), fleet (f), + a command PALETTE (p) — no commands to memorize');
   print('  keyflip codexbar              bridge to a locally-installed CodexBar usage monitor (aligns tracked providers; reads no secrets)');
+  print('  keyflip brain "<intent>"      OPT-IN: plain-language intent → a proposed plan of keyflip steps you approve one-by-one');
+  print('                                 (needs KEYFLIP_BRAIN=1 + GEMINI_API_KEY; only PROPOSES — never runs anything on its own)');
   print('  keyflip license <status|activate <file>>   offline license (open-core; paid tiers)');
   print('  keyflip run <name> [-- args]  PARALLEL session: run Claude as that account in THIS');
   print('                                 terminal only (asks first; --no-share = bare profile)');
@@ -1160,6 +1162,43 @@ async function cmdUi(ctx, rest) {
     print('Run this command (it needs arguments or a confirmation):');
     print('  ' + style.bold('keyflip ' + (cmd.usage || cmd.name)));
   }
+}
+
+// The opt-in "brain": a natural-language intent -> a proposed plan of keyflip commands (via Gemini),
+// which you approve STEP BY STEP. It NEVER runs anything on its own; approved steps go through the
+// normal dispatch (so destructive ones still re-confirm). OFF unless KEYFLIP_BRAIN=1 + GEMINI_API_KEY.
+async function cmdBrain(ctx, rest) {
+  const brain = require('./brain');
+  if (!brain.enabled(ctx, {})) {
+    return fail('the brain is OFF. Turn it on with ' + style.bold('KEYFLIP_BRAIN=1') + ' and ' + style.bold('GEMINI_API_KEY=<your free Gemini key>') +
+      '.\n  It only PROPOSES keyflip actions from plain-language intent — you approve each step; nothing runs on its own.');
+  }
+  const intent = positionals(rest, []).join(' ').trim();
+  if (!intent) return fail('usage: keyflip brain "<what you want, in plain language>"');
+  if (!JSON_MODE) print(style.dim('Thinking… (Gemini proposes; nothing runs without your OK)'));
+  let r;
+  try { r = await brain.propose(ctx, intent, { fetch: (typeof fetch !== 'undefined' ? fetch : undefined) }); }
+  catch (e) { return fail((e && e.message) || String(e)); }
+  if (!r.ok) return fail('could not build a plan: ' + (r.reason || 'unknown') + ' (the model may be unavailable or the key invalid).');
+  if (!r.plan.length) { print('No actionable keyflip steps proposed for that.' + (r.dropped && r.dropped.length ? ' (ignored: ' + r.dropped.join(', ') + ')' : '')); return; }
+  if (JSON_MODE) { jsonOut({ brain: { intent: intent, plan: r.plan, dropped: r.dropped || [] } }); return; }
+  print(style.bold('Proposed plan') + ' (' + r.plan.length + ' step' + (r.plan.length === 1 ? '' : 's') + ') — you approve each:');
+  print(brain.formatPlan(r.plan));
+  if (r.dropped && r.dropped.length) print(style.dim('  (ignored non-keyflip suggestions: ' + r.dropped.join(', ') + ')'));
+  if (!process.stdin.isTTY) { print(style.dim('Non-interactive shell — not running. Re-run in a terminal to approve steps.')); return; }
+  print('');
+  let ran = 0;
+  for (let i = 0; i < r.plan.length; i++) {
+    const step = r.plan[i];
+    const cmdline = 'keyflip ' + step.command + (step.args ? ' ' + step.args : '');
+    const ok = await confirm('  ' + (step.mutating ? style.warn('[mutating] ') : style.ok('[safe] ')) + style.bold(cmdline) + '  — run it? [y/N] ');
+    if (!ok) { print(style.dim('   skipped.')); continue; }
+    const args = step.args ? step.args.split(/\s+/).filter(Boolean) : [];
+    logmod.log('brain run: ' + step.command + (step.args ? ' ' + step.args : ''));
+    try { await dispatch(ctx, step.command, args); ran++; }
+    catch (e) { print(style.warn('   step failed: ' + ((e && e.message) || e))); }
+  }
+  print(style.dim('Done — ' + ran + ' of ' + r.plan.length + ' step(s) run.'));
 }
 
 // Bridge to a locally-installed CodexBar (the menu-bar usage monitor): show whether it's present
@@ -4587,6 +4626,8 @@ async function dispatch(ctx, cmd, rest) {
         return cmdSurfaces(ctx, rest);
       case 'codexbar':
         return cmdCodexbar(ctx, rest);
+      case 'brain':
+        return cmdBrain(ctx, rest);
       case 'versioning':
         return cmdVersion(ctx, rest);
       case 'history':

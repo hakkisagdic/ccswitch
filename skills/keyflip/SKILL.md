@@ -332,6 +332,12 @@ pins); `keyflip_transfer_pull` (pull+merge a bundle from a LAN peer running `tra
 - **CodexBar bridge** — `keyflip codexbar` detects a locally-installed CodexBar (the menu-bar usage monitor)
   and aligns its tracked providers with what keyflip can read. Complementary (CodexBar monitors, keyflip
   manages); reads only CodexBar's non-secret provider list, never its stored tokens.
+- **Brain (opt-in)** — `keyflip brain "<intent>"` turns plain-language intent into a PROPOSED plan of
+  keyflip commands (via Gemini) that the human approves one step at a time. It is PROPOSE-ONLY (never
+  executes; approved steps go through normal dispatch, so destructive ones still re-confirm) and OFF
+  unless `KEYFLIP_BRAIN=1` + `GEMINI_API_KEY` are set. Outbound context is secret-scrubbed; only real
+  catalog commands survive validation, and any step carrying args is treated as mutating. MCP:
+  `keyflip_brain_propose` (read-only — returns the plan, runs nothing).
 - **Surfaces (E1)** — `keyflip surfaces` detects other AI tools (Cursor/Gemini/Codex/Copilot/opencode/
   Aider) and their active account where readable — DETECTION ONLY, never reads/moves a secret. (MCP:
   `keyflip_surfaces` (read).)
