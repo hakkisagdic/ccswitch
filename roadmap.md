@@ -1120,9 +1120,23 @@ infra (payment/issuer/site — needs the business decisions in PRODUCTIZATION.md
 - **STILL half-wired (flagged, awaiting wire-or-remove decision):** `ui.color` (style.js only honors
   NO_COLOR/TTY — redundant), `usage.cacheTtlSeconds` (usage.js uses a hardcoded TTL).
 
-### Remaining approved (build-now, test-on-hardware-later)
-- Device-gated: Windows/Linux app-auth wiring, native tray (Win/Linux), SSO live.
-- JetBrains extension (new artifact; VS Code extension already shipped as vscode-keyflip v0.3.0).
+### Device-gated (built + synthetic-tested this session; LIVE hardware validation pending)
+- **Linux app-auth** (commit 21e08f2): context.js sets appDataDir=$XDG_CONFIG_HOME/Claude; getSafeStoragePassword
+  gets the libsecret key via secret-tool; detect reuses the shared v10 path; apply is file-copy. +3 tests.
+  NEEDS-VERIFICATION: exact secret-tool schema; real Claude-app decrypt on Linux.
+- **Windows app-auth**: already complete (DPAPI read via decryptAppBlobWin + file-copy apply). No gap.
+- **Linux tray** (commit ea26faf): GNOME Argos / KDE kargos share xbar's plugin format → menubar.pluginTarget
+  installs there. Windows has no zero-dep tray host (documented; --dir for any compatible tool). +1 test.
+- **SSO**: code is WIRED (`--sso` → `claude auth login --sso`, isolated capture); only LIVE validation on a
+  real SSO/2FA org remains (see docs/ENTERPRISE-SSO.md checklist) — org-gated, no code gap.
+- Config wiring completed (commit 4ae944f): ui.color + usage.cacheTtlSeconds — every schema key now consumed.
+
+### In progress
+- JetBrains extension (new artifact; VS Code extension already shipped as vscode-keyflip v0.3.0) — building.
+
+### Still needs the user's hardware (cannot verify in this environment)
+- Linux/Windows app-auth against a real Claude desktop app; Linux tray rendering in Argos/kargos;
+  SSO login on a real org; JetBrains plugin compiled + run in IntelliJ.
 
 Original plan below (for reference):
 
