@@ -225,6 +225,35 @@ test('detectAppAccount reports keychain-locked when the token is v10 but the key
   assert.strictEqual(det.reason, 'keychain-locked');
 });
 
+test('detectAppAccount on Linux decrypts via the safeStorage password (the same v10 path as macOS, NOT win32 DPAPI)', function () {
+  const s = setup();
+  s.ctx.platform = 'linux'; // Linux uses libsecret for the key but the SAME v10 blob format
+  const ORG = '48ebd0e4-4225-4565-93b1-beb21171933e', ACCT = '99b327a0-bd81-4e43-b2ef-ee618d301400';
+  const obj = {};
+  obj['oauth:tokenCacheV2'] = encryptV10('{"org":"' + ORG + '","scopes":[]}', 'linuxpw');
+  obj['dxt:allowlistLastUpdated:' + ORG] = '2026-07-01T00:00:00.000Z';
+  fs.writeFileSync(s.cfg, JSON.stringify(obj));
+  fs.mkdirSync(path.join(s.ctx.appDataDir, 'claude-code-sessions', ACCT, ORG), { recursive: true });
+  const lam = path.join(s.ctx.appDataDir, 'local-agent-mode-sessions', ACCT, ORG);
+  fs.mkdirSync(lam, { recursive: true });
+  fs.writeFileSync(path.join(lam, 'x.json'), JSON.stringify({ oauthAccount: { emailAddress: 'linux@x.com' } }));
+  s.ctx.safeStoragePassword = 'linuxpw'; // injected libsecret key (secret-tool would return this)
+  const det = appauth.detectAppAccount(s.ctx);
+  assert.strictEqual(det.org, ORG);
+  assert.strictEqual(det.account, ACCT);
+  assert.strictEqual(det.email, 'linux@x.com');
+});
+
+test('applyFromProfile round-trips on Linux (the apply side is file-copy — platform-agnostic)', function () {
+  const s = setup();
+  s.ctx.platform = 'linux';
+  appauth.snapshotToProfile(s.ctx, 'A');
+  fs.writeFileSync(s.cfg, JSON.stringify({ locale: 'en-US', 'oauth:tokenCache': 'TOKEN-B-V1', 'oauth:tokenCacheV2': 'TOKEN-B-V2', keep: 'me' }));
+  const r = appauth.applyFromProfile(s.ctx, 'A');
+  assert.strictEqual(r.ok, true, r.reason);
+  assert.strictEqual(JSON.parse(fs.readFileSync(s.cfg, 'utf8'))['oauth:tokenCacheV2'], 'TOKEN-A-V2');
+});
+
 test('detectAppAccount reports no-desktop-config when there is no app data dir', function () {
   const s = setup();
   s.ctx.appDataDir = null;

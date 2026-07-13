@@ -80,6 +80,29 @@ test('a non-.claude config dir keeps .claude.json inside it', function () {
   assert.strictEqual(ctx.claudeConfigPath, path.join(alt, '.claude.json'));
 });
 
+test('appDataDir defaults to the Claude Electron userData dir per platform (Linux now set, was null)', function () {
+  const home = tmpdir();
+  assert.strictEqual(
+    createContext({ home: home, platform: 'darwin', store: { type: 'memory' } }).appDataDir,
+    path.join(home, 'Library', 'Application Support', 'Claude'));
+  const savedXdg = process.env.XDG_CONFIG_HOME;
+  delete process.env.XDG_CONFIG_HOME;
+  try {
+    assert.strictEqual(
+      createContext({ home: home, platform: 'linux', store: { type: 'memory' } }).appDataDir,
+      path.join(home, '.config', 'Claude'), 'Linux → ~/.config/Claude (enables desktop app-auth)');
+    process.env.XDG_CONFIG_HOME = path.join(home, 'xdg');
+    assert.strictEqual(
+      createContext({ home: home, platform: 'linux', store: { type: 'memory' } }).appDataDir,
+      path.join(home, 'xdg', 'Claude'), 'Linux honors $XDG_CONFIG_HOME');
+  } finally {
+    if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = savedXdg;
+  }
+  assert.strictEqual(
+    createContext({ home: home, platform: 'freebsd', store: { type: 'memory' } }).appDataDir, null,
+    'unsupported platforms stay null');
+});
+
 // ---- #8 per-resource locks ----
 test('different resources lock independently; same resource is exclusive', async function () {
   const d = tmpdir();

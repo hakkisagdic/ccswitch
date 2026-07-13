@@ -42,6 +42,10 @@ function createContext(opts) {
   if (appDataDir === undefined) {
     if (platform === 'darwin') appDataDir = path.join(home, 'Library', 'Application Support', 'Claude');
     else if (platform === 'win32') { const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming'); appDataDir = path.join(appData, 'Claude'); }
+    // Linux: Electron's default userData is $XDG_CONFIG_HOME/<App> (falling back to ~/.config/<App>).
+    // The token blobs use the SAME v10 safeStorage format as macOS; only the key source differs
+    // (libsecret via secret-tool instead of the Keychain) — see appauth.getSafeStoragePassword.
+    else if (platform === 'linux') { const xdg = process.env.XDG_CONFIG_HOME || path.join(home, '.config'); appDataDir = path.join(xdg, 'Claude'); }
     else appDataDir = null;
   }
 

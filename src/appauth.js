@@ -8,7 +8,11 @@
 // blobs — while the app is closed — logs the app into the other account without a
 // manual re-login. We snapshot them per profile on `add` and restore on `switch`.
 //
-// macOS desktop app only.
+// Cross-platform: macOS (Keychain), Windows (DPAPI + Local State, AES-256-GCM), and
+// Linux (libsecret via secret-tool, same v10 blob format as macOS). The apply/sign-out
+// side is file-copy of the opaque blobs + cookies, so it is platform-agnostic given
+// ctx.appDataDir (set per-platform in context.js). Detection of WHICH account differs
+// only in how the safeStorage key is obtained (getSafeStoragePassword / decryptAppBlobWin).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -87,8 +91,17 @@ function decryptBlob(b64, password) {
 }
 function getSafeStoragePassword(ctx) {
   // An explicitly-set property (even null) is authoritative — lets tests inject a
-  // locked/denied keychain without shelling out to the real `security` binary.
+  // locked/denied keychain without shelling out to the real `security`/`secret-tool` binary.
   if (ctx && Object.prototype.hasOwnProperty.call(ctx, 'safeStoragePassword')) return ctx.safeStoragePassword;
+  if (ctx && ctx.platform === 'linux') {
+    // Linux Electron safeStorage keeps the key in the OS keyring (libsecret / gnome-keyring /
+    // kwallet), the same as Chromium's OSCrypt. Look it up with secret-tool by the schema
+    // Chromium/Electron use: attribute `application=Claude`. NEEDS-VERIFICATION: the exact
+    // attribute/schema can vary by build; if this returns nothing, the app may be on the
+    // "basic_text" backend (hardcoded password) — inject ctx.safeStoragePassword to override.
+    const r = run('secret-tool', ['lookup', 'application', 'Claude']);
+    return r.code === 0 && r.stdout ? r.stdout.replace(/\r?\n$/, '') : null;
+  }
   const r = run('/usr/bin/security', ['find-generic-password', '-s', 'Claude Safe Storage', '-a', 'Claude Key', '-w']);
   return r.code === 0 ? r.stdout.replace(/\r?\n$/, '') : null;
 }
@@ -228,7 +241,7 @@ function copyCookieDb(src, dest) {
 // again with the app closed fixes it).
 function snapshotToProfile(ctx, name) {
   const cp = configPath(ctx);
-  if (!cp) return { ok: false, reason: 'only the macOS desktop app has this' };
+  if (!cp) return { ok: false, reason: 'no Claude desktop app data directory on this platform' };
   const cfg = readJSON(cp);
   if (!cfg) return { ok: false, reason: 'no desktop config.json' };
   const snap = {};
@@ -261,7 +274,7 @@ function pruneConfigBackups(ctx, keep) {
 // Restore profile <name>'s desktop login into config.json. App must be closed.
 function applyFromProfile(ctx, name) {
   const cp = configPath(ctx);
-  if (!cp) return { ok: false, reason: 'only the macOS desktop app has this' };
+  if (!cp) return { ok: false, reason: 'no Claude desktop app data directory on this platform' };
   const snap = readJSON(profilePath(ctx, name));
   if (!snap) return { ok: false, reason: 'no saved desktop login for this profile' };
   const cfg = readJSON(cp);
@@ -314,7 +327,7 @@ function applyFromProfile(ctx, name) {
 // Sign the desktop app out: remove its login tokens from config.json (app closed).
 function signOutApp(ctx) {
   const cp = configPath(ctx);
-  if (!cp) return { ok: false, reason: 'only the macOS desktop app has this' };
+  if (!cp) return { ok: false, reason: 'no Claude desktop app data directory on this platform' };
   const cfg = readJSON(cp);
   if (!cfg) return { ok: false, reason: 'no desktop config.json' };
 
