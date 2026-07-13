@@ -185,11 +185,12 @@ account; `keyflip provider off` restores it. Never put an API key in argv — us
 - `keyflip statusline install` — show the active account (+ provider, + cached quota) right in the
   Claude Code prompt. `keyflip statusline` (no args) emits the line; `uninstall` removes it. Fast,
   cache-only (no network). (MCP: `keyflip_statusline`.)
-- `keyflip menubar` — emit **xbar/SwiftBar** menu-bar plugin output (active account + 5h quota in the
-  title; dropdown of accounts colour-coded by quota with **click-to-switch**, providers, open-dashboard).
-  `keyflip menubar --install [--dir <plugins-folder>] [--interval 30s]` drops a wrapper into the plugin
-  folder (xbar's auto-detected; SwiftBar via `--dir`). No daemon in keyflip — the menu-bar app re-runs
-  it on an interval. macOS (xbar/SwiftBar). CLI-only (it IS the machine-readable surface).
+- `keyflip menubar` — emit menu-bar/tray plugin output (active account + 5h quota in the title;
+  dropdown of accounts colour-coded by quota with **click-to-switch**, providers, open-dashboard).
+  `keyflip menubar --install [--dir <plugins-folder>] [--interval 30s]` drops a wrapper into the host's
+  plugin folder. The plugin format is shared, so it installs on **macOS xbar/SwiftBar** (xbar's folder
+  auto-detected; SwiftBar via `--dir`) AND **Linux GNOME Argos / KDE kargos** (`$XDG_CONFIG_HOME/argos`).
+  No daemon in keyflip — the host re-runs it on an interval. CLI-only (it IS the machine-readable surface).
 - `keyflip panel [--open]` — a command-activated LOCAL web dashboard (loopback only, read-only, not a
   daemon): account grid with quota bars + 5h usage sparklines, a **session-activity calendar heatmap**
   (GitHub-style, 26 weeks) and a **memory constellation** (keepsakes linked by shared terms), providers,
