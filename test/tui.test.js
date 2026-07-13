@@ -57,6 +57,39 @@ test('render: accounts, bars, providers, fleet summary and footer are all presen
   assert.ok(f.indexOf('enter switch') !== -1 && f.indexOf('q quit') !== -1, 'footer keymap');
 });
 
+test('command palette: p opens it, typing searches, enter picks a command', function () {
+  let s = baseState({ view: 'accounts' });
+  s = tui.reducer(s, 'p');
+  assert.strictEqual(s.view, 'palette');
+  assert.strictEqual(s.filtering, true);
+  // type "status" and render
+  ['s', 't', 'a', 't', 'u', 's'].forEach(function (c) { s = tui.reducer(s, c); });
+  const f = tui.render(s, { width: 76, height: 18 });
+  assert.ok(/Command palette/.test(f) && /status/.test(f), 'palette shows the status command');
+  assert.ok(/search: status/.test(f), 'the live search box is in the footer');
+  // enter selects the highlighted command -> a pending {type:command}
+  const after = tui.reducer(s, 'enter');
+  assert.ok(after.pending && after.pending.type === 'command' && after.pending.name === 'status', 'enter picks the command');
+  assert.strictEqual(after.pending.safe, true, 'status is safe (directly runnable)');
+  // esc leaves the palette back to accounts
+  assert.strictEqual(tui.reducer(s, 'escape').view, 'accounts');
+});
+
+test('render: the usage view lists provider windows with bars + reset (u key toggles it)', function () {
+  const st = baseState({ view: 'usage', providerUsage: [
+    { id: 'codex', label: 'Codex', present: true, status: 'ok', windows: [{ name: '5h', usedPct: 42, human: 'resets in 3h' }] },
+    { id: 'cursor', label: 'Cursor', present: true, status: 'unknown', windows: [] },
+  ] });
+  const f = tui.render(st, { width: 80, height: 20 });
+  assert.ok(/Provider usage/.test(f), 'usage header');
+  assert.ok(/Codex/.test(f) && /42%/.test(f) && /resets in 3h/.test(f), 'a provider window rendered');
+  assert.ok(/Cursor/.test(f) && /unknown/.test(f), 'an unknown provider is shown, not dropped');
+  assert.ok(/u usage/.test(f), 'the u key is advertised in the footer');
+  // reducer: 'u' toggles into and back out of the usage view
+  assert.strictEqual(tui.reducer(baseState({ view: 'accounts' }), 'u').view, 'usage');
+  assert.strictEqual(tui.reducer(baseState({ view: 'usage' }), 'u').view, 'accounts');
+});
+
 test('render: the selected row is marked with ❯ and unknown usage shows ? and dot bar', function () {
   const f = tui.render(baseState({ sel: 2 }), { width: 90, height: 24 });
   const carolLine = f.split('\n').filter(function (l) { return l.indexOf('carol@z.com') !== -1; })[0];

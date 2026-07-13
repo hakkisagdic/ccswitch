@@ -184,7 +184,8 @@ function usage() {
   print('  keyflip rules <show|import|emit --to claude|cursor|agents|gemini [--write]>   normalize this project\'s AI rule files into one model, re-emit per tool');
   print('  keyflip checkpoint <list|create --summary "…"|latest|show <id>>   git-bound session-boundary snapshots');
   print('  keyflip handoff [--to <claude|cursor|kiro|opencode|windsurf|generic>]   print a CONTINUE-PROMPT so a NEW tool can resume this project');
-  print('  keyflip ui                    full-screen TUI dashboard (accounts + usage + fleet)');
+  print('  keyflip ui                    full-screen TUI: accounts, provider usage (u), fleet (f), + a command PALETTE (p) — no commands to memorize');
+  print('  keyflip codexbar              bridge to a locally-installed CodexBar usage monitor (aligns tracked providers; reads no secrets)');
   print('  keyflip license <status|activate <file>>   offline license (open-core; paid tiers)');
   print('  keyflip run <name> [-- args]  PARALLEL session: run Claude as that account in THIS');
   print('                                 terminal only (asks first; --no-share = bare profile)');
@@ -1141,11 +1142,46 @@ async function cmdUi(ctx, rest) {
     const activeName = (profs.filter(function (p) { return p.active; })[0] || {}).name;
     try { return await usagemod.usageForProfiles(c, names, { liveFor: activeName }); } catch (e) { return {}; }
   };
-  return tui.run(ctx, {
+  // Multi-provider usage (other AI tools) for the 'usage' view — best-effort, never blocks the UI.
+  const loadProvUsage = async function (c) {
+    try { return await require('./provusage').readAll(c, { fetch: (typeof fetch !== 'undefined' ? fetch : undefined) }); } catch (e) { return []; }
+  };
+  const r = await tui.run(ctx, {
     view: view,
+    provUsage: await loadProvUsage(ctx),
     onSwitch: function (name) { return withLock(ctx, function () { return core.performSwitch(ctx, name); }); },
-    onRefresh: async function (c, s) { return tui.buildState(c, { usage: await loadUsage(c), view: s.view }); },
+    onRefresh: async function (c, s) { return tui.buildState(c, { usage: await loadUsage(c), provUsage: await loadProvUsage(c), view: s.view }); },
   });
+  // The palette let the user PICK a command. Run the safe (read-only / no-arg) ones directly;
+  // print the rest ready to paste (they need args or a confirmation the palette can't gather).
+  if (r && r.command) {
+    const cmd = r.command;
+    if (cmd.safe) { print(style.dim('› keyflip ' + cmd.name)); return dispatch(ctx, cmd.name, []); }
+    print('Run this command (it needs arguments or a confirmation):');
+    print('  ' + style.bold('keyflip ' + (cmd.usage || cmd.name)));
+  }
+}
+
+// Bridge to a locally-installed CodexBar (the menu-bar usage monitor): show whether it's present
+// and how its tracked providers line up with what keyflip can read. Complementary, not a dependency.
+function cmdCodexbar(ctx, rest) {
+  const codexbar = require('./codexbar');
+  const det = codexbar.detect(ctx);
+  const align = codexbar.align(ctx);
+  if (JSON_MODE) { jsonOut({ codexbar: { detected: det, align: align } }); return; }
+  print(style.bold('CodexBar bridge') + ' ' + style.dim('(monitors usage; keyflip manages accounts — they complement each other)'));
+  if (!det.present) {
+    print('  ' + style.dim('○') + ' CodexBar not detected (no ' + det.configPath + ').');
+    print('  ' + style.dim('It is an optional macOS menu-bar usage monitor: https://github.com/steipete/CodexBar'));
+    return;
+  }
+  print('  ' + style.ok('●') + ' CodexBar config found' + (det.hasApp ? ' + app installed' : '') + '  ' + style.dim(det.configPath));
+  print('  Providers CodexBar tracks: ' + (align.codexbar.length ? align.codexbar.join(', ') : '(none read)'));
+  print('  keyflip can read usage for: ' + (align.keyflip.length ? align.keyflip.join(', ') : '(none)'));
+  if (align.both.length) print('  ' + style.ok('↔ both: ') + align.both.join(', '));
+  if (align.onlyCodexbar.length) print('  ' + style.dim('only CodexBar: ' + align.onlyCodexbar.join(', ')));
+  if (align.onlyKeyflip.length) print('  ' + style.dim('only keyflip: ' + align.onlyKeyflip.join(', ')));
+  print('  ' + style.dim('keyflip never reads CodexBar\'s stored secrets — only its non-secret provider list.'));
 }
 
 // SURFACES (E1): detect which OTHER AI tools are on this machine (read-only — never reads/moves a secret).
@@ -4549,6 +4585,8 @@ async function dispatch(ctx, cmd, rest) {
         return cmdUi(ctx, rest);
       case 'surfaces':
         return cmdSurfaces(ctx, rest);
+      case 'codexbar':
+        return cmdCodexbar(ctx, rest);
       case 'versioning':
         return cmdVersion(ctx, rest);
       case 'history':

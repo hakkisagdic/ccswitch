@@ -325,7 +325,13 @@ pins); `keyflip_transfer_pull` (pull+merge a bundle from a LAN peer running `tra
   exec drain + exec-trust are CLI-only.)
 - **Settings (E4)** — `keyflip config set <key> <value>` is the one validated home for toggles.
   (MCP: `keyflip_config_list`/`_config_get` (read), `_config_set`/`_config_unset` need `confirm`.)
-- **TUI (E5)** — `keyflip ui` is a full-screen dashboard (accounts/usage/fleet). Interactive, CLI-only.
+- **TUI (E5)** — `keyflip ui` is a full-screen dashboard: accounts, provider usage (`u`, from provusage —
+  the multi-provider CodexBar-style monitor), fleet (`f`), and a searchable **command palette** (`p`) over
+  the whole CLI surface so the user never has to memorize commands (safe read-only ones run on Enter; the
+  rest are printed ready to paste). Interactive, CLI-only.
+- **CodexBar bridge** — `keyflip codexbar` detects a locally-installed CodexBar (the menu-bar usage monitor)
+  and aligns its tracked providers with what keyflip can read. Complementary (CodexBar monitors, keyflip
+  manages); reads only CodexBar's non-secret provider list, never its stored tokens.
 - **Surfaces (E1)** — `keyflip surfaces` detects other AI tools (Cursor/Gemini/Codex/Copilot/opencode/
   Aider) and their active account where readable — DETECTION ONLY, never reads/moves a secret. (MCP:
   `keyflip_surfaces` (read).)

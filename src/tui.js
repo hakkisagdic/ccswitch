@@ -20,9 +20,20 @@ const KEYMAP = [
   { keys: ['enter'], label: 'switch' },
   { keys: ['r'], label: 'refresh' },
   { keys: ['f'], label: 'fleet' },
+  { keys: ['u'], label: 'usage' },
+  { keys: ['p'], label: 'palette' },
   { keys: ['/'], label: 'filter' },
   { keys: ['q'], label: 'quit' },
 ];
+
+// The command PALETTE: a searchable index of the whole CLI surface so nothing has to be memorized.
+// commands.js is pure data (no IO); require it lazily + defensively so the TUI never hard-breaks.
+function commandCatalog() { try { return require('./commands'); } catch (e) { return { search: function () { return []; }, CATALOG: [] }; }
+}
+function paletteResults(state) {
+  const q = (state && state.filter) || '';
+  try { return commandCatalog().search(q) || []; } catch (e) { return []; }
+}
 
 // ---- small pure helpers ----
 function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -62,7 +73,7 @@ function firstNonActive(accounts) { for (let i = 0; i < accounts.length; i++) { 
 // ---- UI preferences (persisted as <configDir>/.tui.json, dot-prefixed so profiles.list() never
 // mistakes it for an account — keyflip has no daemon, so this is the only cross-run TUI state) ----
 function prefsPath(ctx) { return path.join(ctx.configDir, '.tui.json'); }
-function sanitizePrefs(p) { const out = {}; if (p && typeof p === 'object' && !Array.isArray(p)) { if (p.view === 'fleet' || p.view === 'accounts') out.view = p.view; } return out; }
+function sanitizePrefs(p) { const out = {}; if (p && typeof p === 'object' && !Array.isArray(p)) { if (['fleet', 'accounts', 'usage'].indexOf(p.view) !== -1) out.view = p.view; } return out; }
 function loadPrefs(ctx) { try { return sanitizePrefs(readJsonForWrite(prefsPath(ctx))); } catch (e) { return {}; } }
 function savePrefs(ctx, prefs) { try { atomicWrite(prefsPath(ctx), JSON.stringify(sanitizePrefs(prefs), null, 2), 0o600); return true; } catch (e) { return false; } }
 
@@ -102,7 +113,8 @@ function buildState(ctx, opts) {
   }, []);
 
   const prefs = loadPrefs(ctx);
-  const view = (opts.view || prefs.view) === 'fleet' ? 'fleet' : 'accounts';
+  const VIEWS = ['accounts', 'fleet', 'usage'];
+  const view = VIEWS.indexOf(opts.view || prefs.view) !== -1 ? (opts.view || prefs.view) : 'accounts';
 
   return {
     now: safe(function () { return ctx.now(); }, null),
@@ -110,6 +122,9 @@ function buildState(ctx, opts) {
     activeProvider: (active && active.name) || null,
     accounts: accounts,
     providers: providers,
+    // Multi-provider usage (CodexBar-style) from provusage.readAll — INJECTED (opts.provUsage) so
+    // buildState stays hermetic; the CLI loads it with a real fetch. Shape: [{id,label,present,status,windows}].
+    providerUsage: Array.isArray(opts.provUsage) ? opts.provUsage : [],
     fleet: opts.fleet || fleetSummary(ctx),
     // navigation state (mutated only through reducer)
     sel: firstNonActive(accounts),
@@ -150,6 +165,8 @@ function reduceNormal(s, key) {
   if (key === 'down' || key === 'j') { s.sel = clamp(s.sel + 1, max); return s; }
   if (key === 'r') { s.pending = { type: 'refresh' }; return s; }
   if (key === 'f') { s.view = s.view === 'fleet' ? 'accounts' : 'fleet'; s.sel = 0; return s; }
+  if (key === 'u') { s.view = s.view === 'usage' ? 'accounts' : 'usage'; s.sel = 0; return s; }
+  if (key === 'p' || key === ':') { s.view = 'palette'; s.filtering = true; s.filter = ''; s.sel = 0; return s; }
   if (key === '/') { s.filtering = true; return s; }
   if (key === 'enter') {
     if (s.view !== 'accounts') return s;
@@ -163,12 +180,29 @@ function reduceNormal(s, key) {
   return s;
 }
 function reduceFilter(s, key) {
+  if (s.view === 'palette') return reducePalette(s, key);
   if (key === 'quit') { s.quit = true; return s; }
   if (key === 'escape') { s.filtering = false; s.filter = ''; s.sel = 0; return s; }
   if (key === 'enter') { s.filtering = false; s.sel = clamp(s.sel, visible(s).length); return s; }
   if (key === 'backspace') { s.filter = String(s.filter || '').slice(0, -1); s.sel = 0; return s; }
   if (key === 'up') { s.sel = clamp(s.sel - 1, visible(s).length); return s; }
   if (key === 'down') { s.sel = clamp(s.sel + 1, visible(s).length); return s; }
+  if (typeof key === 'string' && key.length === 1) { s.filter = String(s.filter || '') + key; s.sel = 0; return s; }
+  return s;
+}
+// Palette mode: type to search the command catalog; ↑/↓ pick; enter = choose (run() surfaces the
+// chosen command to the CLI); esc leaves the palette back to the accounts view.
+function reducePalette(s, key) {
+  const res = paletteResults(s);
+  if (key === 'quit' || key === 'escape') { s.view = 'accounts'; s.filtering = false; s.filter = ''; s.sel = 0; return s; }
+  if (key === 'up') { s.sel = clamp(s.sel - 1, res.length); return s; }
+  if (key === 'down') { s.sel = clamp(s.sel + 1, res.length); return s; }
+  if (key === 'backspace') { s.filter = String(s.filter || '').slice(0, -1); s.sel = 0; return s; }
+  if (key === 'enter') {
+    const cmd = res[clamp(s.sel, res.length)];
+    if (cmd) s.pending = { type: 'command', name: cmd.name, safe: !!cmd.safe, usage: cmd.usage || cmd.name };
+    return s;
+  }
   if (typeof key === 'string' && key.length === 1) { s.filter = String(s.filter || '') + key; s.sel = 0; return s; }
   return s;
 }
@@ -187,11 +221,15 @@ function render(state, dims) {
 
   push(body, '⚡ keyflip ui   ·   ' + (state.activeEmail || 'not logged in'));
   push(body, '');
-  if (state.view === 'fleet') renderFleet(state, body, push);
+  if (state.view === 'palette') renderPalette(state, body, push);
+  else if (state.view === 'fleet') renderFleet(state, body, push);
+  else if (state.view === 'usage') renderUsage(state, body, push);
   else renderAccounts(state, body, push);
-  push(body, '');
-  push(body, providersLine(state), 'dim');
-  if (state.view !== 'fleet') push(body, fleetSummaryLine(state), 'dim');
+  if (state.view !== 'palette') {
+    push(body, '');
+    push(body, providersLine(state), 'dim');
+    if (state.view === 'accounts') push(body, fleetSummaryLine(state), 'dim');
+  }
 
   if (state.message) push(foot, state.message, 'dim');
   push(foot, footerLine(state), 'dim');
@@ -229,6 +267,36 @@ function renderFleet(state, arr, push) {
   });
 }
 
+// Command palette: search the whole CLI surface. Shows the top matches with the selected one
+// highlighted; the footer (below) carries the live search box + the run/back keys.
+function renderPalette(state, arr, push) {
+  const res = paletteResults(state);
+  push(arr, 'Command palette' + (state.filter ? '  ·  "' + state.filter + '"' : '  ·  type to search all ' + (commandCatalog().CATALOG || []).length + ' commands'));
+  if (!res.length) { push(arr, '  no command matches "' + state.filter + '"', 'dim'); return; }
+  const sel = clamp(state.sel, res.length);
+  res.slice(0, 12).forEach(function (c, i) {
+    const selected = i === sel;
+    const arrow = selected ? '❯' : ' ';
+    push(arr, arrow + ' ' + padEnd(c.name, 14) + ' ' + dimc('[' + (c.group || '') + ']') + (c.safe ? ' ' + '↵' : ''), selected ? 'sel' : null);
+    if (selected) push(arr, '     ' + (c.usage || c.desc || ''), 'dim');
+  });
+  if (res.length > 12) push(arr, '  … ' + (res.length - 12) + ' more — keep typing to narrow', 'dim');
+}
+
+// Multi-provider usage across the whole AI toolbox (CodexBar-style), from provusage.readAll.
+function renderUsage(state, arr, push) {
+  const list = state.providerUsage || [];
+  push(arr, 'Provider usage' + (list.length ? '' : ' — run `keyflip usage --providers` or none detected'));
+  if (!list.length) { push(arr, '  No other AI providers detected on this machine.', 'dim'); return; }
+  list.forEach(function (p) {
+    const win = (p.windows || [])[0];
+    const pct = win && typeof win.usedPct === 'number' ? win.usedPct : null;
+    const st = p.status && p.status !== 'ok' ? '  ' + p.status : '';
+    push(arr, '  ' + padEnd(p.label || p.id, 12) + ' ' + bar(pct, BARW) + ' ' + pctLbl(pct) +
+      (win && win.name ? '  ' + win.name : '') + (win && win.human ? '  ' + win.human : '') + st, null);
+  });
+}
+
 function providersLine(state) {
   const ps = state.providers || [];
   if (!ps.length) return 'Providers: none';
@@ -241,6 +309,7 @@ function fleetSummaryLine(state) {
   return 'Fleet: ' + (f.name || 'configured') + ' · ' + (peers ? peers + ' peer(s)' : 'no peers seen yet');
 }
 function footerLine(state) {
+  if (state.view === 'palette') return 'search: ' + (state.filter || '') + '▏   (↑/↓ pick · enter run · esc back)';
   if (state.filtering) return 'filter: ' + (state.filter || '') + '▏   (enter apply · esc cancel)';
   return KEYMAP.map(function (k) { return k.keys.join('/') + ' ' + k.label; }).join(' · ');
 }
@@ -296,7 +365,7 @@ function run(ctx, opts) {
   let state = buildState(ctx, opts);
 
   return new Promise(function (resolve) {
-    let finished = false, busy = false;
+    let finished = false, busy = false, chosenCommand = null;
 
     const size = function () { return { width: output.columns || 80, height: output.rows || 24, color: true }; };
     const draw = function () { write(CSI + 'H' + render(state, size())); };
@@ -316,7 +385,7 @@ function run(ctx, opts) {
       try { process.removeListener('SIGWINCH', onResize); } catch (e) { /* ignore */ }
       savePrefs(ctx, { view: state.view });
       write(CSI + '?25h' + CSI + '?1049l'); // show cursor, leave alt-screen
-      resolve({ tty: true });
+      resolve({ tty: true, command: chosenCommand });
     }
     function onResize() { if (!finished) draw(); }
 
@@ -332,6 +401,11 @@ function run(ctx, opts) {
         state.message = 'Refreshing…'; draw();
         try { const disp = opts.onRefresh ? await opts.onRefresh(ctx, state) : buildState(ctx, mergeOpts()); state = mergeNav(disp); state.message = '↻ refreshed'; }
         catch (e) { state.message = '❌ ' + ((e && e.message) || e); }
+      } else if (eff.type === 'command') {
+        // The user picked a command from the palette: leave the TUI and hand it to the CLI, which
+        // runs the safe ones and prints the rest ready to paste (with args). Never run blind.
+        chosenCommand = { name: eff.name, safe: eff.safe, usage: eff.usage };
+        cleanup(); return;
       }
       busy = false; draw();
     }

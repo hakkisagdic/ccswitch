@@ -145,7 +145,8 @@ keyflip route <list|set <model> <provider>|clear|arbitrage on|off> · keyflip ca
 keyflip post --to <webhook> [--status]   # post status/events to Slack/Discord/generic webhook
 keyflip swarm <run "<cmd>"|ping <url>|drain --allow-exec|results>   # run a command across YOUR OWN enrolled fleet machines (exec is consent-gated; argv-array, no shell)
 keyflip config <list|get <k>|set <k> <v>|unset <k>>   # one validated home for settings (E4)
-keyflip ui [--fleet]          # full-screen TUI dashboard (accounts, usage, fleet)
+keyflip ui [--fleet]          # full-screen TUI: accounts · provider usage (u) · fleet (f) · a searchable COMMAND PALETTE (p) so nothing has to be memorized
+keyflip codexbar              # bridge to a locally-installed CodexBar usage monitor: align its tracked providers with keyflip's (reads no secrets)
 keyflip surfaces              # detect other AI tools on this machine (Cursor/Gemini/Codex/Copilot/opencode/Aider) — read-only
 keyflip license <status|activate <file>|deactivate>   # offline plan (Ed25519-signed, no phone-home)
 keyflip run <name> [-- args]  # PARALLEL session: that account in THIS terminal only

@@ -944,6 +944,12 @@ const TOOLS = [
     run: async function (ctx, args) { const config = require('./config'); return { key: String(args.key), value: config.get(ctx, String(args.key)) }; },
   },
   {
+    name: 'keyflip_codexbar', title: 'CodexBar bridge (provider alignment)',
+    description: 'Detect a locally-installed CodexBar (the menu-bar AI-usage monitor) and align its tracked providers with what keyflip can read. Complementary: CodexBar monitors usage, keyflip manages accounts. Reads only CodexBar\'s non-secret provider list — never its stored tokens. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO,
+    run: async function (ctx) { const cb = require('./codexbar'); return { detected: cb.detect(ctx), align: cb.align(ctx) }; },
+  },
+  {
     name: 'keyflip_config_set', title: 'Change a keyflip setting',
     description: 'Set a setting to a new value (validated + coerced against the schema; unknown key / wrong type / out-of-range are rejected). Changes future keyflip behavior. Ask the user, then confirm=true.',
     inputSchema: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, confirm: confirmProp.confirm }, required: ['key', 'value', 'confirm'], additionalProperties: false }, annotations: MUT,
