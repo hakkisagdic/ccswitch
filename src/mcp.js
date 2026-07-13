@@ -924,7 +924,7 @@ const TOOLS = [
   },
   {
     name: 'keyflip_config_get', title: 'Read one keyflip setting',
-    description: 'Read a single setting by key (e.g. "ui.theme"); returns its effective value. Unknown keys error. Read-only.',
+    description: 'Read a single setting by key (e.g. "autoswitch.threshold"); returns its effective value. Unknown keys error. Read-only.',
     inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'], additionalProperties: false }, annotations: RO,
     run: async function (ctx, args) { const config = require('./config'); return { key: String(args.key), value: config.get(ctx, String(args.key)) }; },
   },

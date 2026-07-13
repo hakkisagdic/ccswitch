@@ -8,7 +8,6 @@
 // yet'. Claude itself stays handled by keyflip core; switch() is a clean seam that throws until built.
 const fs = require('fs');
 const path = require('path');
-const { atomicWrite, readJsonForWrite } = require('./fsutil');
 
 function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
 function pathExists(ctx, rel) { try { return fs.existsSync(path.join(ctx.home, rel)); } catch (e) { return false; } }
@@ -135,20 +134,6 @@ function switchSurface(ctx, surfaceId, account, opts) {
   throw new Error('switch not supported for ' + surfaceId + ' (v1 is detection-only)');
 }
 
-// ---- optional last-detection snapshot cache (so other keyflip surfaces can read last-known state
-// cheaply without re-scanning). Persisted 0600 as <configDir>/surfaces.json. Pure reads never write.
-function snapshotPath(ctx) { return path.join(ctx.configDir, 'surfaces.json'); }
-function writeSnapshot(ctx, opts) {
-  const snap = { at: ctx.now(), surfaces: detectAll(ctx, opts) };
-  atomicWrite(snapshotPath(ctx), JSON.stringify(snap, null, 2), 0o600);
-  return snap;
-}
-function readSnapshot(ctx) {
-  let x; try { x = readJsonForWrite(snapshotPath(ctx)); } catch (e) { return null; } // corrupt cache = absent
-  if (!x || typeof x !== 'object' || Array.isArray(x) || !Array.isArray(x.surfaces)) return null;
-  return x;
-}
-
 // ---- MCP tool (read-only): expose detection to agents. No secret ever crosses this seam — only
 // presence, a NON-SECRET active-account identity where readable, and a store LOCATION (never contents).
 const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -169,8 +154,5 @@ module.exports = {
   detectOne: detectOne,
   detectAll: detectAll,
   switch: switchSurface,
-  snapshotPath: snapshotPath,
-  writeSnapshot: writeSnapshot,
-  readSnapshot: readSnapshot,
   mcpTools: mcpTools,
 };

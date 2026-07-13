@@ -25,8 +25,6 @@ SCHEMA['autoswitch.threshold'] = { type: 'int', default: 90, min: 0, max: 100, h
 SCHEMA['autoswitch.strategy'] = { type: 'enum', values: ['best', 'next-available'], default: 'best', help: 'How autoswitch chooses the next account (most headroom vs. first available).' };
 SCHEMA['autoswitch.group'] = { type: 'string', default: '', help: 'Restrict autoswitch/rotation to accounts in this group tag (empty = all accounts).' };
 SCHEMA['notify.desktop'] = { type: 'bool', default: false, help: 'Show desktop banners on notable events (macOS).' };
-SCHEMA['security.relockMinutes'] = { type: 'int', default: 0, min: 0, max: 1440, help: 'Auto-relock the vault after N idle minutes (0 = never).' };
-SCHEMA['ui.theme'] = { type: 'enum', values: ['auto', 'light', 'dark'], default: 'auto', help: 'Color theme for keyflip output.' };
 SCHEMA['ui.color'] = { type: 'bool', default: true, help: 'Colorize CLI output.' };
 SCHEMA['usage.cacheTtlSeconds'] = { type: 'int', default: 60, min: 0, max: 3600, help: 'How long to cache per-account usage before refetching.' };
 

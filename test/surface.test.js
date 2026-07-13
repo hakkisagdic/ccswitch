@@ -167,37 +167,6 @@ test('detectOne returns null for an unknown surface id', function () {
   assert.strictEqual(surface.get('constructor'), null);
 });
 
-// ---- snapshot cache (persist as <configDir>/surfaces.json) ----
-test('writeSnapshot persists detection (0600) and readSnapshot round-trips it', function () {
-  const ctx = makeCtx();
-  write(ctx, '.gemini/google_accounts.json', JSON.stringify({ active: 'me@gmail.com', old: [] }));
-  const snap = surface.writeSnapshot(ctx);
-  assert.strictEqual(snap.at, '2026-01-01T00:00:00.000Z'); // ctx.now() injected
-  assert.ok(Array.isArray(snap.surfaces) && snap.surfaces.length === surface.SURFACES.length);
-
-  const p = surface.snapshotPath(ctx);
-  assert.ok(fs.existsSync(p));
-  if (process.platform !== 'win32') assert.strictEqual(fs.statSync(p).mode & 0o777, 0o600);
-
-  const back = surface.readSnapshot(ctx);
-  assert.strictEqual(back.at, snap.at);
-  const g = back.surfaces.filter(function (s) { return s.id === 'gemini'; })[0];
-  assert.strictEqual(g.activeAccount, 'me@gmail.com');
-});
-
-test('readSnapshot returns null when absent, and treats a corrupt cache as absent', function () {
-  const ctx = makeCtx();
-  assert.strictEqual(surface.readSnapshot(ctx), null); // none yet
-  fs.writeFileSync(surface.snapshotPath(ctx), 'not json {{{');
-  assert.strictEqual(surface.readSnapshot(ctx), null); // corrupt -> absent, never throws
-});
-
-test('detectAll is pure: it never writes the snapshot file', function () {
-  const ctx = makeCtx();
-  surface.detectAll(ctx);
-  assert.strictEqual(fs.existsSync(surface.snapshotPath(ctx)), false);
-});
-
 // ---- MCP tool (read-only) ----
 test('keyflip_surfaces MCP tool is read-only and returns detection with no secrets', async function () {
   const ctx = makeCtx();
