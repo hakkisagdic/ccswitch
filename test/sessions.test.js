@@ -77,3 +77,57 @@ test('filenames that are not real session ids are ignored (argv-injection guard)
   assert.ok(ids.indexOf('good-1234-uuid') !== -1);
   assert.strictEqual(ids.indexOf('--inject'), -1); // dangerous name skipped
 });
+
+test('rebindConfigPaths rewrites the old path across .claude.json, settings and commands, with backups', function () {
+  const ctx = makeCtx();
+  const oldCwd = '/Users/x/Documents/GitHub/proj';
+  const newCwd = '/Users/x/Projects/GitHub/proj';
+  // .claude.json: projects map KEY, githubRepoPaths, and an stdio MCP server pointing into the folder
+  fs.writeFileSync(ctx.claudeConfigPath, JSON.stringify({
+    projects: { [oldCwd]: { allowedTools: [] }, '/other': {} },
+    githubRepoPaths: { 'me/proj': [oldCwd] },
+    mcpServers: { local: { command: oldCwd + '/tools/bin/mcp', args: ['-c', oldCwd + '/tools/c.yaml'] } },
+  }, null, 2));
+  // settings.json permission rule + a slash-command script
+  const claudeDir = path.join(ctx.home, '.claude');
+  fs.mkdirSync(path.join(claudeDir, 'commands'), { recursive: true });
+  fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(bash ' + oldCwd + '/deploy.sh *)'] } }, null, 2));
+  fs.writeFileSync(path.join(claudeDir, 'commands', 'ship.md'), 'run: cd ' + oldCwd + '/apps/mobile && ./release.sh\n');
+
+  const res = sessions.rebindConfigPaths(ctx, oldCwd, newCwd);
+  assert.strictEqual(res.patched, 3, 'three config files rewritten');
+  assert.ok(res.backedUp >= 3, 'each touched file backed up');
+
+  const cfg = JSON.parse(fs.readFileSync(ctx.claudeConfigPath, 'utf8'));
+  assert.ok(cfg.projects[newCwd], 'projects map KEY moved to new path');
+  assert.ok(!cfg.projects[oldCwd], 'old projects key gone');
+  assert.deepStrictEqual(cfg.githubRepoPaths['me/proj'], [newCwd]);
+  assert.strictEqual(cfg.mcpServers.local.command, newCwd + '/tools/bin/mcp', 'MCP binary path rewritten');
+  assert.ok(cfg.mcpServers.local.args[1].startsWith(newCwd), 'MCP arg path rewritten');
+  assert.ok(fs.existsSync(ctx.claudeConfigPath + '.keyflip-bak'), 'backup exists');
+  assert.ok(fs.readFileSync(path.join(claudeDir, 'commands', 'ship.md'), 'utf8').indexOf(newCwd) !== -1);
+  assert.ok(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8').indexOf(oldCwd) === -1);
+});
+
+test('rebindConfigPaths honors dryRun and extraFiles, and no-ops when old===new', function () {
+  const ctx = makeCtx();
+  const oldCwd = '/a/b/proj', newCwd = '/c/d/proj';
+  fs.writeFileSync(ctx.claudeConfigPath, JSON.stringify({ projects: { [oldCwd]: {} } }));
+  const extra = path.join(ctx.home, 'wiki.config');
+  fs.writeFileSync(extra, 'VAULT="' + oldCwd + '/docs"\n');
+
+  // dryRun: reports the hit but writes nothing (no backup, file unchanged)
+  const dry = sessions.rebindConfigPaths(ctx, oldCwd, newCwd, { dryRun: true, extraFiles: [extra] });
+  assert.ok(dry.patched >= 2, 'reports both files');
+  assert.strictEqual(dry.backedUp, 0, 'dryRun writes nothing');
+  assert.ok(fs.readFileSync(extra, 'utf8').indexOf(oldCwd) !== -1, 'extra file untouched in dryRun');
+  assert.ok(!fs.existsSync(extra + '.keyflip-bak'));
+
+  // real run with extraFiles rewrites the app-specific config too
+  const res = sessions.rebindConfigPaths(ctx, oldCwd, newCwd, { extraFiles: [extra] });
+  assert.ok(res.patched >= 2);
+  assert.ok(fs.readFileSync(extra, 'utf8').indexOf(newCwd) !== -1, 'extra file rewritten');
+
+  // no-op when paths equal
+  assert.strictEqual(sessions.rebindConfigPaths(ctx, newCwd, newCwd).patched, 0);
+});

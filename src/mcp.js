@@ -1009,8 +1009,8 @@ const TOOLS = [
   // ---- session lifecycle: rebind, archive ----
   {
     name: 'keyflip_sessions_rebind', title: 'Re-link chat history after a folder rename',
-    description: 'Re-link a project\'s Claude Code chat history after its folder was renamed/moved: copies transcripts to the new folder key, rewrites the old cwd inside them, patches the desktop-app session records (macOS). Old copies are backed up. Mutating — ask the user, then confirm=true.',
-    inputSchema: { type: 'object', properties: { old_path: { type: 'string' }, new_path: { type: 'string' }, purge_old: { type: 'boolean' }, force: { type: 'boolean' }, confirm: confirmProp.confirm }, required: ['old_path', 'new_path', 'confirm'], additionalProperties: false }, annotations: MUT,
+    description: 'Re-link a project\'s Claude Code chat history after its folder was renamed/moved: copies transcripts to the new folder key, rewrites the old cwd inside them, patches the desktop-app session records (macOS), and rewrites the old path across config surfaces that transcripts don\'t cover — ~/.claude.json (projects map, githubRepoPaths, stdio MCP server paths), settings*.json permission rules, commands/* slash-command scripts, and the desktop app config. Old copies are backed up (.keyflip-bak). Pass extra_files to also rewrite app-specific configs (e.g. a tool\'s own config). Mutating — ask the user, then confirm=true.',
+    inputSchema: { type: 'object', properties: { old_path: { type: 'string' }, new_path: { type: 'string' }, purge_old: { type: 'boolean' }, force: { type: 'boolean' }, skip_configs: { type: 'boolean', description: 'Only rebind transcripts + app registry; leave config files untouched.' }, extra_files: { type: 'array', items: { type: 'string' }, description: 'Additional config files to rewrite oldPath->newPath in (absolute paths).' }, confirm: confirmProp.confirm }, required: ['old_path', 'new_path', 'confirm'], additionalProperties: false }, annotations: MUT,
     run: async function (ctx, args) {
       needConfirm(args);
       const path = require('path');
@@ -1019,7 +1019,9 @@ const TOOLS = [
       if (!r.ok) throw new Error('rebind did not run: ' + (r.reason || 'unknown'));
       let patched = 0;
       if (ctx.appDataDir && !appctl.isClaudeRunning(ctx.platform)) { try { patched = sessions.rebindAppRegistry(ctx, oldAbs, newAbs).patched; } catch (e) { /* best-effort */ } }
-      return { moved: r.moved, skipped: r.skipped, appRecordsPatched: patched, newDir: r.newDir };
+      let configs = { patched: 0, files: [] };
+      if (!args.skip_configs) { try { configs = sessions.rebindConfigPaths(ctx, oldAbs, newAbs, { extraFiles: Array.isArray(args.extra_files) ? args.extra_files : [] }); } catch (e) { /* best-effort */ } }
+      return { moved: r.moved, skipped: r.skipped, appRecordsPatched: patched, configFilesPatched: configs.patched, configFiles: configs.files.map(function (x) { return x.path; }), newDir: r.newDir };
     },
   },
   {

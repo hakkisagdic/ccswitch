@@ -240,6 +240,60 @@ function rebindAppRegistry(ctx, oldCwd, newCwd) {
   return { patched: patched, relinked: relinked };
 }
 
+// After a project's folder is renamed/moved, its ABSOLUTE path is also baked into config
+// surfaces that transcripts/app-registry don't cover, and a rename leaves every one of them
+// pointing at the gone path:
+//   • ~/.claude.json      — the `projects` map keys, `githubRepoPaths`, and any stdio MCP
+//                           server whose command/args point INTO the folder (e.g. a local binary).
+//   • ~/.claude/settings.json + settings.local.json — permission rules that name a path.
+//   • ~/.claude/commands/* — slash-command scripts (*.md/*.json/*.sh) with hard-coded paths.
+//   • <appData>/claude_desktop_config.json, git-worktrees.json — desktop-app config.
+// This rewrites oldCwd -> newCwd across them with a raw substring replace (so nested paths like
+// <old>/apps/x are fixed too — same semantics as transcript rebind), backing up each touched
+// file as <file>.keyflip-bak first. Pass opts.extraFiles to include app-specific configs the
+// caller knows about (e.g. a tool's own config). opts.dryRun reports without writing.
+// Returns { files: [{path, hits}], patched, backedUp }.
+function rebindConfigPaths(ctx, oldCwd, newCwd, opts) {
+  opts = opts || {};
+  if (!oldCwd || !newCwd || oldCwd === newCwd) return { files: [], patched: 0, backedUp: 0 };
+  const claudeDir = ctx.claudeDir || path.join(ctx.home, '.claude');
+  const claudeConfig = ctx.claudeConfigPath ||
+    path.join(path.basename(claudeDir) === '.claude' ? path.dirname(claudeDir) : claudeDir, '.claude.json');
+  const settings = ctx.claudeSettingsPath || path.join(claudeDir, 'settings.json');
+  const targets = [claudeConfig, settings, path.join(claudeDir, 'settings.local.json')];
+  // slash-command scripts under commands/
+  const cmdDir = path.join(claudeDir, 'commands');
+  try {
+    fs.readdirSync(cmdDir).forEach(function (f) {
+      if (/\.(md|json|sh|js|ts)$/.test(f)) targets.push(path.join(cmdDir, f));
+    });
+  } catch (e) { /* no commands dir */ }
+  // desktop-app config surfaces
+  if (ctx.appDataDir) {
+    targets.push(path.join(ctx.appDataDir, 'claude_desktop_config.json'));
+    targets.push(path.join(ctx.appDataDir, 'git-worktrees.json'));
+  }
+  if (Array.isArray(opts.extraFiles)) opts.extraFiles.forEach(function (f) { targets.push(f); });
+
+  const seen = {}, results = [];
+  let patched = 0, backedUp = 0;
+  targets.forEach(function (f) {
+    if (seen[f]) return; seen[f] = true;
+    let txt; try { txt = fs.readFileSync(f, 'utf8'); } catch (e) { return; } // missing/unreadable -> skip
+    if (txt.indexOf(oldCwd) === -1) return;
+    const hits = txt.split(oldCwd).length - 1;
+    const rewritten = txt.split(oldCwd).join(newCwd);
+    if (rewritten === txt) return;
+    if (!opts.dryRun) {
+      try { fs.copyFileSync(f, f + '.keyflip-bak'); backedUp++; } catch (e) { /* best-effort */ }
+      try { fs.writeFileSync(f, rewritten); } catch (e) { return; }
+    }
+    results.push({ path: f, hits: hits });
+    patched++;
+  });
+  return { files: results, patched: patched, backedUp: backedUp };
+}
+
 // B3: compact a transcript by eliding bulky TOOL OUTPUT (file reads, command output,
 // images) while keeping the conversation text intact and the JSONL still valid/resumable.
 // Long strings are truncated ONLY inside tool-result/tool-use contexts (or stdout/stderr/
@@ -282,4 +336,4 @@ function compactTranscript(content, opts) {
   return { compacted: out, before: before, after: Buffer.byteLength(out), elided: elided };
 }
 
-module.exports = { projectsDir: projectsDir, list: list, find: find, summarize: summarize, resumeCommand: resumeCommand, sendCommand: sendCommand, decodeProjectDir: decodeProjectDir, encodeCwd: encodeCwd, rebind: rebind, rebindAppRegistry: rebindAppRegistry, searchRow: searchRow, findMatch: findMatch, matchesSearch: matchesSearch, compactTranscript: compactTranscript };
+module.exports = { projectsDir: projectsDir, list: list, find: find, summarize: summarize, resumeCommand: resumeCommand, sendCommand: sendCommand, decodeProjectDir: decodeProjectDir, encodeCwd: encodeCwd, rebind: rebind, rebindAppRegistry: rebindAppRegistry, rebindConfigPaths: rebindConfigPaths, searchRow: searchRow, findMatch: findMatch, matchesSearch: matchesSearch, compactTranscript: compactTranscript };

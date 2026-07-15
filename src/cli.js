@@ -2564,8 +2564,18 @@ async function cmdSessionsRebind(ctx, rest) {
     const reg = sessions.rebindAppRegistry(ctx, oldAbs, newAbs);
     if (reg.patched) print('  ↳ patched ' + reg.patched + ' desktop-app session record(s).');
   }
+  let configs = { patched: 0, files: [] };
+  if (rest.indexOf('--skip-configs') === -1) {
+    const extraFiles = [];
+    for (let i = 0; i < rest.length - 1; i++) { if (rest[i] === '--extra-file') extraFiles.push(path.resolve(rest[i + 1])); }
+    configs = sessions.rebindConfigPaths(ctx, oldAbs, newAbs, { extraFiles: extraFiles });
+    if (configs.patched) {
+      print('  ↳ rewrote the old path in ' + style.bold(String(configs.patched)) + ' config file(s):');
+      configs.files.forEach(function (x) { print('      ' + style.dim(x.path + ' (' + x.hits + ')')); });
+    }
+  }
   print('  ' + style.dim('Restart Claude to see the history under the new folder' + (purgeOld ? ' (old copies disabled).' : '; old copies remain at the old key).')));
-  jsonOut({ rebind: { moved: r.moved, skipped: r.skipped, oldDir: r.oldDir, newDir: r.newDir } });
+  jsonOut({ rebind: { moved: r.moved, skipped: r.skipped, oldDir: r.oldDir, newDir: r.newDir, configFilesPatched: configs.patched, configFiles: configs.files.map(function (x) { return x.path; }) } });
 }
 
 // FLEET: manage every associated keyflip from one screen — see them all, switch a remote
